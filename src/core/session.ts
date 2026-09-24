@@ -77,6 +77,7 @@ export class Session {
   private window: { t: number; power: number }[] = [];
   private nextSampleAt = 0;
   private last: Reading = { power: 0 };
+  private unscored = false;
 
   constructor(
     readonly workout: Workout,
@@ -116,8 +117,10 @@ export class Session {
     if (this.elapsed >= this.duration) this.finish();
   }
 
-  advance(dt: number, reading: Reading): Snapshot {
+  /** `unscored`: time that shouldn't count against the rider (e.g. ERG still engaging). */
+  advance(dt: number, reading: Reading, { unscored = false } = {}): Snapshot {
     this.last = reading;
+    this.unscored = unscored;
     if (this.status !== 'running' || dt <= 0) return this.snapshot();
 
     const seg = segmentAt(this.segments, this.elapsed);
@@ -126,7 +129,7 @@ export class Session {
     this.window.push({ t: this.elapsed, power: reading.power });
     while (this.window.length && this.window[0].t < this.elapsed - SMOOTHING_SECONDS) this.window.shift();
 
-    if (seg && !this.isSettling(seg)) {
+    if (seg && !unscored && !this.isSettling(seg)) {
       const band = classify(this.smoothedPower(), targetW, this.tolerance);
       accumulate(this.stats[seg.index], band, reading.power, targetW, dt);
     }
@@ -162,7 +165,7 @@ export class Session {
       targetW,
       powerW,
       band: classify(powerW, targetW, this.tolerance),
-      settling: seg ? this.isSettling(seg) : false,
+      settling: this.unscored || (seg ? this.isSettling(seg) : false),
       cadence: this.last.cadence,
       heartRate: this.last.heartRate,
       segmentCompliance: seg ? compliance(this.stats[seg.index]) : 0,

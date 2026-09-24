@@ -1,5 +1,7 @@
 import { LevelFilter, powerLevel } from '../core/avatar';
 import { bandHalfWidth } from '../core/compliance';
+import { ErgGovernor, ErgState } from '../core/erg';
+import { leadTarget, StepResponse } from '../core/latency';
 import { clock, pct } from '../core/format';
 import { Session, Snapshot } from '../core/session';
 import type { Workout } from '../core/workout';
@@ -30,6 +32,10 @@ const TARGET_MODE_GRADE = 1;
 // The overview strip above carries the whole-workout context.
 const WINDOW_BEHIND = 40;
 const WINDOW_SPAN = 150;
+/** Send ERG step changes this early so the trainer's control loop lands them on the boundary. */
+const ERG_LEAD_S = 1;
+/** Time constant for gliding the big power number between readings. */
+const GLIDE_S = 0.2;
 
 export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const { workout, ftp, trainer } = props;
@@ -37,6 +43,10 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const sim = trainer instanceof SimulatedTrainer ? trainer : undefined;
   // A read-only power meter can't hold watts for you.
   let mode: ControlMode = trainer.controllable ? props.mode : 'target';
+  // ERG soft start: free road until the rider is spinning, then ramp in.
+  const erg = new ErgGovernor();
+  let ergState: ErgState | undefined;
+  let freeSent = false;
   let speed = 1;
 
   const page = html(`
@@ -56,6 +66,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
       <canvas class="overview"></canvas>
       <canvas class="window"></canvas>
+
+      <aside class="hud" hidden></aside>
 
       <section class="hero${props.avatar !== 'off' ? ' with-avatar' : ''}">
         <div class="power num"><span data-f="power">0</span><small>W</small></div>
@@ -122,7 +134,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
           <button class="btn" data-v="end" hidden>End ride</button>
           <button class="btn" data-v="quit">Quit</button>
         </div>
-        <p class="label" style="text-align:center;margin-top:28px;color:var(--text-3)">Space pause · → skip${sim ? ' · ↑↓ push the rider' : ''}</p>
+        <p class="label" style="text-align:center;margin-top:28px;color:var(--text-3)">Space pause · → skip · L latency${sim ? ' · ↑↓ push the rider' : ''}</p>
       </div>
     </div>
   `);
@@ -159,6 +171,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   function applyMode(m: ControlMode) {
     if (!trainer.controllable) m = 'target';
     mode = m;
+    erg.reset();
+    freeSent = false;
     page.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.mode === m)));
     if (m === 'target') void trainer.setGrade(TARGET_MODE_GRADE);
   }
@@ -211,6 +225,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       e.preventDefault();
       nudge(-15);
     } else if (e.key === 'Escape' && session.status === 'running') togglePause();
+    else if (e.key === 'l' || e.key === 'L') hud.hidden = !hud.hidden;
   };
   window.addEventListener('keydown', onKey);
 
@@ -227,26 +242,52 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   let raf = 0;
   let last = performance.now();
   let lastOverview = 0;
+  let lastHud = 0;
+  let shownPower = 0;
+  const steps = new StepResponse();
+  const hud = $(page, '.hud');
   let finished = false;
 
   const frame = (now: number) => {
     // rAF timestamps can precede the performance.now() taken at setup; never go backwards.
-    const dt = Math.min(0.25, Math.max(0, (now - last) / 1000)) * speed;
+    const realDt = Math.min(0.25, Math.max(0, (now - last) / 1000));
+    const dt = realDt * speed;
     last = now;
 
     const targetW = session.targetWatts();
-    if (mode === 'erg') void trainer.setTargetPower(targetW);
+    const running = session.status === 'running';
     if (sim) sim.goal = targetW;
     // The sim keeps pedalling while paused/ready so the numbers are live, but ride time doesn't move.
-    trainer.tick?.(session.status === 'running' ? dt : Math.min(dt, 0.25));
-
+    trainer.tick?.(running ? dt : Math.min(dt, 0.25));
     const reading = trainer.latest();
-    const snap = session.advance(session.status === 'running' ? dt : 0, {
-      ...reading,
-      // With a strap connected, never fall back to the trainer's (or the simulator's) value.
-      heartRate: props.heartRate ? props.heartRate.latest() : reading.heartRate,
-    });
-    render(snap, now);
+
+    ergState = undefined;
+    if (mode === 'erg') {
+      const leadW = running ? Math.round((leadTarget(session.segments, session.elapsed, ERG_LEAD_S) ?? 0) * ftp) : targetW;
+      const cmd = erg.update({ nowMs: now, active: running, targetW: leadW, powerW: reading.power, cadence: reading.cadence });
+      if (cmd.kind === 'erg') {
+        freeSent = false;
+        void trainer.setTargetPower(cmd.watts);
+        steps.command(cmd.watts, now);
+        steps.reading(reading.power, now);
+      } else if (!freeSent) {
+        freeSent = true;
+        void trainer.setGrade(0);
+      }
+      ergState = erg.state;
+    }
+
+    const snap = session.advance(
+      running ? dt : 0,
+      {
+        ...reading,
+        // With a strap connected, never fall back to the trainer's (or the simulator's) value.
+        heartRate: props.heartRate ? props.heartRate.latest() : reading.heartRate,
+      },
+      // Don't score the rider while ERG is still engaging.
+      { unscored: ergState !== undefined && ergState !== 'engaged' },
+    );
+    render(snap, now, realDt);
 
     if (session.status === 'finished') {
       if (!finished) {
@@ -258,7 +299,30 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     raf = requestAnimationFrame(frame);
   };
 
-  function render(s: Snapshot, now: number) {
+  function verdict(s: Snapshot, live: boolean, diff: number): string {
+    if (!live) return session.status === 'ready' ? 'Ready' : 'Paused';
+    if (ergState === 'released') return 'Pedal to engage';
+    if (ergState === 'ramping') return 'ERG engaging';
+    if (s.settling) return 'Settle in';
+    if (s.band === 'on') return 'On target';
+    return s.band === 'under' ? `Push +${diff} W` : `Ease off −${diff} W`;
+  }
+
+  function renderHud(now: number) {
+    const st = trainer.stats?.(now);
+    const ms = (v?: number) => (v === undefined ? '—' : v >= 1000 ? `${(v / 1000).toFixed(1)} s` : `${Math.round(v)} ms`);
+    const rows: [string, string][] = [
+      ['Trainer', `${trainer.name} · ${trainer.protocol}`],
+      ['Data rate', st ? `${st.hz.toFixed(1)} Hz` : 'simulated'],
+      ['Last reading', st ? ms(st.ageMs) : '—'],
+      ['ERG step response', steps.last === undefined ? 'no steps yet' : `${ms(steps.last)} (avg ${ms(steps.average)}, n=${steps.samples.length})`],
+      ['ERG lead', `${ERG_LEAD_S} s`],
+      ['Display smoothing', '3 s average + glide'],
+    ];
+    hud.innerHTML = rows.map(([k, v]) => `<div><span class="label">${k}</span><span>${esc(v)}</span></div>`).join('');
+  }
+
+  function render(s: Snapshot, now: number, realDt: number) {
     const live = session.status === 'running';
     docEl.dataset.band = live && !s.settling ? s.band : '';
     docEl.dataset.settling = String(s.settling);
@@ -266,23 +330,16 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     avatar?.set(levels.update(live ? powerLevel(zoneFor(s.powerW / ftp)) : 1, now));
 
     setText(fields.elapsed, clock(s.elapsed));
-    setText(fields.power, String(Math.round(s.powerW)));
+    // Glide toward the new value instead of snapping; ~0.2 s, far below the 3 s smoothing.
+    shownPower += (s.powerW - shownPower) * (1 - Math.exp(-realDt / GLIDE_S));
+    setText(fields.power, String(Math.round(shownPower)));
+    if (!hud.hidden && now - lastHud > 250) {
+      lastHud = now;
+      renderHud(now);
+    }
     setText(fields.target, String(s.targetW));
     const diff = Math.round(Math.abs(s.targetW - s.powerW));
-    setText(
-      fields.state,
-      !live
-        ? session.status === 'ready'
-          ? 'Ready'
-          : 'Paused'
-        : s.settling
-          ? 'Settle in'
-          : s.band === 'on'
-            ? 'On target'
-            : s.band === 'under'
-              ? `Push +${diff} W`
-              : `Ease off −${diff} W`,
-    );
+    setText(fields.state, verdict(s, live, diff));
 
     // Gauge spans target ±25% (at least ±40 W); the band is the tolerance window.
     const range = Math.max(s.targetW * 0.25, 40);

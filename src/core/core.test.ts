@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { LevelFilter, powerLevel } from './avatar';
 import { classify } from './compliance';
+import { ErgGovernor } from './erg';
+import { leadTarget, RateMeter, StepResponse } from './latency';
 import { CrankCadence, parseCyclingPower, wahooErg, wahooGrade, wahooSimMode, wahooUnlock } from './cps';
 import { parseHeartRate, parseIndoorBikeData, setSimulation, setTargetPower } from './ftms';
 import { normalizedPower, trainingStress } from './metrics';
@@ -190,5 +192,101 @@ describe('cycling power + wahoo', () => {
     // 0% -> 32768 (0x8000); 1% -> 33096 (0x8148)
     expect([...wahooGrade(0)]).toEqual([0x46, 0x00, 0x80]);
     expect([...wahooGrade(1)]).toEqual([0x46, 0x48, 0x81]);
+  });
+});
+
+describe('erg soft start', () => {
+  const base = { active: true, targetW: 200, powerW: 0 };
+
+  it('stays free until cadence holds above the engage threshold', () => {
+    const g = new ErgGovernor();
+    expect(g.update({ ...base, nowMs: 0, cadence: 20 })).toEqual({ kind: 'free' });
+    expect(g.update({ ...base, nowMs: 500, cadence: 70 })).toEqual({ kind: 'free' });
+    expect(g.update({ ...base, nowMs: 1000, cadence: 50 })).toEqual({ kind: 'free' }); // dipped: streak resets
+    expect(g.update({ ...base, nowMs: 1500, cadence: 70 })).toEqual({ kind: 'free' });
+    expect(g.update({ ...base, nowMs: 3000, cadence: 70, powerW: 80 })).toEqual({ kind: 'erg', watts: 80 });
+    expect(g.state).toBe('ramping');
+  });
+
+  it('ramps from current power to target, then engages', () => {
+    const g = new ErgGovernor();
+    g.update({ ...base, nowMs: 0, cadence: 80 });
+    g.update({ ...base, nowMs: 1500, cadence: 80, powerW: 100 }); // engage, ramp from 100
+    expect(g.update({ ...base, nowMs: 6500, cadence: 80 })).toEqual({ kind: 'erg', watts: 150 });
+    expect(g.update({ ...base, nowMs: 11_500, cadence: 80 })).toEqual({ kind: 'erg', watts: 200 });
+    expect(g.state).toBe('engaged');
+  });
+
+  it('never ramps from absurdly low power', () => {
+    const g = new ErgGovernor();
+    g.update({ ...base, nowMs: 0, cadence: 80 });
+    expect(g.update({ ...base, nowMs: 1500, cadence: 80, powerW: 5 })).toEqual({ kind: 'erg', watts: 60 });
+  });
+
+  it('releases on a cadence collapse and when paused', () => {
+    const g = new ErgGovernor();
+    g.update({ ...base, nowMs: 0, cadence: 80 });
+    g.update({ ...base, nowMs: 1500, cadence: 80 });
+    g.update({ ...base, nowMs: 20_000, cadence: 80 });
+    expect(g.state).toBe('engaged');
+    expect(g.update({ ...base, nowMs: 21_000, cadence: 30 }).kind).toBe('erg');
+    expect(g.update({ ...base, nowMs: 24_000, cadence: 30 })).toEqual({ kind: 'free' });
+    expect(g.state).toBe('released');
+
+    const h = new ErgGovernor();
+    h.update({ ...base, nowMs: 0, cadence: 80 });
+    h.update({ ...base, nowMs: 1500, cadence: 80 });
+    expect(h.update({ ...base, active: false, nowMs: 2000, cadence: 80 })).toEqual({ kind: 'free' });
+    expect(h.state).toBe('released');
+  });
+
+  it('falls back to power when there is no cadence sensor', () => {
+    const g = new ErgGovernor();
+    g.update({ ...base, nowMs: 0, powerW: 60 });
+    expect(g.update({ ...base, nowMs: 1500, powerW: 60 }).kind).toBe('erg');
+  });
+});
+
+describe('session unscored time', () => {
+  it('does not score time flagged unscored, and reports it as settling', () => {
+    const s = new Session(workout, 200);
+    s.start();
+    s.skip(); // Interval 1/2: no grace window
+    const snap = s.advance(2, { power: 50 }, { unscored: true });
+    expect(snap.settling).toBe(true);
+    expect(s.stats[1].seconds).toBe(0);
+    s.advance(2, { power: 50 });
+    expect(s.stats[1].under).toBeCloseTo(2);
+  });
+});
+
+describe('latency', () => {
+  it('leads step changes but not ramps', () => {
+    const segs = expand(workout); // ramp 0-100 (0.5->1.0), steady 100-160 @1.0, steady 160-190 @0.5, ...
+    // Ramp into the steady block ends at 1.0 = same level: no step, no lead.
+    expect(leadTarget(segs, 99.5, 1)).toBeCloseTo(targetAt(segs, 99.5)!);
+    // 1.0 -> 0.5 at t=160 is a step: commanded 1 s early.
+    expect(leadTarget(segs, 159.2, 1)).toBe(0.5);
+    expect(leadTarget(segs, 158.5, 1)).toBe(1.0);
+  });
+
+  it('measures notification rate and freshness', () => {
+    const r = new RateMeter();
+    [0, 250, 500, 750, 1000].forEach((t) => r.mark(t));
+    expect(r.hz(1000)).toBeCloseTo(4);
+    expect(r.ageMs(1100)).toBe(100);
+  });
+
+  it('times ERG step responses', () => {
+    const s = new StepResponse();
+    s.command(150, 0);
+    s.command(152, 100); // small change: not a step
+    s.reading(150, 200);
+    expect(s.samples).toEqual([]);
+    s.command(300, 1000); // step
+    s.reading(200, 1500);
+    s.reading(280, 2500); // within 5% of 300? 15 W band -> no
+    s.reading(290, 3100); // yes
+    expect(s.last).toBe(2100);
   });
 });

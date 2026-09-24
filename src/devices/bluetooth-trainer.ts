@@ -29,6 +29,7 @@ import {
   setTargetPower,
   startResume,
 } from '../core/ftms';
+import { RateMeter } from '../core/latency';
 import type { Reading } from '../core/session';
 import type { Trainer } from './trainer';
 
@@ -50,6 +51,7 @@ export abstract class BluetoothTrainer implements Trainer {
   onDisconnect?: () => void;
 
   protected reading: Reading = { power: 0 };
+  private readonly rate = new RateMeter();
   private control?: BluetoothRemoteGATTCharacteristic;
   /** Control writes must not overlap (KICKRs drop them); chain them. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -76,6 +78,15 @@ export abstract class BluetoothTrainer implements Trainer {
 
   latest(): Reading {
     return this.reading;
+  }
+
+  stats(nowMs: number) {
+    return { hz: this.rate.hz(nowMs), ageMs: this.rate.ageMs(nowMs) };
+  }
+
+  /** Call on every power/cadence data notification. */
+  protected noteSample() {
+    this.rate.mark(performance.now());
   }
 
   /** Some trainers relay a paired HR strap; use it if present. */
@@ -118,6 +129,7 @@ class FtmsTrainer extends BluetoothTrainer {
   async init() {
     await subscribe(await this.service.getCharacteristic(INDOOR_BIKE_DATA), (v) => {
       const d = parseIndoorBikeData(v);
+      this.noteSample();
       this.reading = {
         power: d.power ?? this.reading.power,
         cadence: d.cadence ?? this.reading.cadence,
@@ -165,6 +177,7 @@ class CyclingPowerTrainer extends BluetoothTrainer {
   async init() {
     await subscribe(await this.service.getCharacteristic(CYCLING_POWER_MEASUREMENT), (v) => {
       const d = parseCyclingPower(v);
+      this.noteSample();
       this.reading = {
         ...this.reading,
         power: d.power,

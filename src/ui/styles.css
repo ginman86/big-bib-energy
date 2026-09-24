@@ -602,6 +602,29 @@ button {
   }
 }
 
+.hud {
+  position: absolute;
+  top: 76px;
+  left: 28px;
+  z-index: 5;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  background: rgba(18, 18, 20, 0.9);
+  border: 1px solid var(--line-strong);
+  backdrop-filter: blur(8px);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.hud div {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+.hud[hidden] {
+  display: none;
+}
+
 .sim-panel {
   display: flex;
   gap: 8px;

@@ -32,7 +32,14 @@ and command bytes were verified against a scripted fake device, not yet real KIC
 
 ## Modes
 
-- **ERG** — the trainer holds the target watts for you (FTMS *Set Target Power*).
+- **ERG** — the trainer holds the target watts for you. Soft start: the trainer stays on a free
+  0% road until cadence holds above 55 rpm, then ramps from your current power to the target over
+  10 s. It releases again if cadence drops below 40 rpm for 3 s (the ERG "death spiral") or when
+  paused. Engaging time isn't scored.
+- ERG step changes are sent 1 s early (ERG lead) so the trainer's 1–3 s control loop lands the
+  new power on the interval boundary; ramps aren't led.
+- Press **L** on the ride screen for a latency HUD: trainer data rate, age of the last reading,
+  and measured ERG step response.
 - **Target** — the trainer simulates a flat road (FTMS *Set Simulation*, 1% grade); you hit the
   number with gears and legs. This is where the on/under/over feedback earns its keep.
 
@@ -61,6 +68,8 @@ src/core/      Pure logic, no DOM (type-checked with tsconfig.core.json). Portab
   session.ts     Ride state machine, driven by advance(dt, reading)
   compliance.ts  On/under/over classification and per-block scoring
   metrics.ts     NP, IF, TSS
+  erg.ts         ERG soft start / low-cadence release
+  latency.ts     ERG lead, notification rate, ERG step-response timing
   ftms.ts        Bluetooth FTMS / Heart Rate byte encode/decode
   cps.ts         Cycling Power decode, crank cadence, Wahoo control encoders
   history.ts     Ride records and rollups
