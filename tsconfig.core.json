@@ -1,0 +1,11 @@
+{
+  // Type-checks src/core WITHOUT DOM types, so the core stays portable
+  // (a future Rust/WASM or native port). Any browser API use here is a type error.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/core"],
+  "exclude": ["src/core/**/*.test.ts"]
+}

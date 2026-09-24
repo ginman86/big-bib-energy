@@ -1,0 +1,46 @@
+# Zwifty Pants
+
+A personal indoor-training app. No virtual world — just the workout, where you are in it,
+and whether you're holding the number.
+
+## Run
+
+```sh
+npm install
+npm run dev        # http://localhost:5173
+npm test           # core unit tests
+npm run typecheck  # app + DOM-free core check
+```
+
+Bluetooth trainers need Chrome or Edge (desktop or Android), served from `localhost` or HTTPS.
+Without a trainer connected, rides use a simulated rider (speed 1×/4×/16×, ↑/↓ to push it off target).
+
+## Modes
+
+- **ERG** — the trainer holds the target watts for you (FTMS *Set Target Power*).
+- **Target** — the trainer simulates a flat road (FTMS *Set Simulation*, 1% grade); you hit the
+  number with gears and legs. This is where the on/under/over feedback earns its keep.
+
+## Layout
+
+```
+src/core/      Pure logic, no DOM (type-checked with tsconfig.core.json). Portable to Rust later.
+  workout.ts     Workout model (steps as fraction of FTP) → timeline segments
+  session.ts     Ride state machine, driven by advance(dt, reading)
+  compliance.ts  On/under/over classification and per-block scoring
+  metrics.ts     NP, IF, TSS
+  ftms.ts        Bluetooth FTMS / Heart Rate byte encode/decode
+  history.ts     Ride records and rollups
+src/devices/   Trainer interface, simulated rider, Web Bluetooth FTMS trainer
+src/ui/        Home, ride, and summary screens; canvas profile renderer
+src/workouts/  Built-in workout library
+```
+
+## Roadmap
+
+- [ ] Verify against a real Elite Suito (ERG response, SIM mode feel)
+- [x] Separate heart-rate strap connection (verify with Garmin HRM)
+- [ ] `.zwo` import
+- [ ] `.fit` export
+- [ ] Strava: OAuth as identity, auto-upload rides
+- [ ] Small backend keyed by Strava athlete id: history, progress over time, streaks, shared stats with friends
