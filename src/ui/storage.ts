@@ -3,10 +3,12 @@
 
 import type { RideRecord } from '../core/history';
 import type { ControlMode } from '../devices/trainer';
+import type { Rider } from './avatar';
 
 export interface Settings {
   ftp: number;
   mode: ControlMode;
+  avatar: Rider | 'off';
 }
 
 const SETTINGS_KEY = 'zp.settings';
@@ -29,7 +31,7 @@ function write(key: string, value: unknown) {
   }
 }
 
-export const loadSettings = (): Settings => read(SETTINGS_KEY, { ftp: 250, mode: 'erg' as ControlMode });
+export const loadSettings = (): Settings => read<Settings>(SETTINGS_KEY, { ftp: 250, mode: 'erg', avatar: 'm' });
 export const saveSettings = (s: Settings) => write(SETTINGS_KEY, s);
 
 export function loadHistory(): RideRecord[] {

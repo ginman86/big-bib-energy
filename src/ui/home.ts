@@ -40,12 +40,15 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   const page = html(`
     <main class="home">
       <header class="topbar">
-        <span class="wordmark">Zwifty<i>/</i>Pants</span>
+        <span class="wordmark">Big Bib<i>/</i>Energy</span>
         <span class="label">Indoor training</span>
       </header>
 
       <section class="hero-head">
-        <h1>Hold<br/><em>the line.</em></h1>
+        <div class="headline">
+          <h1>Hold<br/><em>the line.</em></h1>
+          <img class="patch" src="/brand/patch.jpg" alt="Big Bib Energy club patch" />
+        </div>
         <div class="month">
           <div><span class="label">Rides · month</span><span class="num">${month.rides}</span></div>
           <div><span class="label">Time</span><span class="num">${month.rides ? hoursMinutes(month.seconds) : '—'}</span></div>
@@ -63,6 +66,14 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
           <div class="seg" data-role="mode">
             <button data-mode="erg" aria-pressed="${settings.mode === 'erg'}">ERG</button>
             <button data-mode="target" aria-pressed="${settings.mode === 'target'}">Target</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="label">Rider</span>
+          <div class="seg" data-role="avatar">
+            ${(['m', 'f', 'off'] as const)
+              .map((a) => `<button data-avatar="${a}" aria-pressed="${settings.avatar === a}">${{ m: 'Male', f: 'Female', off: 'Off' }[a]}</button>`)
+              .join('')}
           </div>
         </div>
         <div class="field">
@@ -131,6 +142,9 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   });
   page.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => props.onSettings({ ...settings, mode: b.dataset.mode as ControlMode })),
+  );
+  page.querySelectorAll<HTMLButtonElement>('[data-avatar]').forEach((b) =>
+    b.addEventListener('click', () => props.onSettings({ ...settings, avatar: b.dataset.avatar as Settings['avatar'] })),
   );
   page.querySelector('[data-role=connect]')?.addEventListener('click', () => props.onConnect());
   page.querySelector('[data-role=disconnect]')?.addEventListener('click', () => props.onDisconnect());

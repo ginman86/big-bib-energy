@@ -84,6 +84,7 @@ function ride(workout: Workout) {
       mode: settings.mode,
       trainer,
       heartRate,
+      avatar: settings.avatar,
       onModeChange(mode) {
         settings = { ...settings, mode };
         saveSettings(settings);

@@ -8,6 +8,9 @@ export interface SummaryProps {
   onDone(): void;
 }
 
+/** Hold the line this well and you've earned the flaming bibs. */
+const CREST_COMPLIANCE = 0.9;
+
 function verdict(compliance: number): string {
   if (compliance >= 0.9) return 'Dialled <em>in.</em>';
   if (compliance >= 0.75) return 'Solid <em>work.</em>';
@@ -22,12 +25,17 @@ export function renderSummary(root: HTMLElement, { session, onDone }: SummaryPro
   const page = html(`
     <main class="summary">
       <header class="topbar">
-        <span class="wordmark">Zwifty<i>/</i>Pants</span>
+        <span class="wordmark">Big Bib<i>/</i>Energy</span>
         <button class="btn primary" data-role="done">Done</button>
       </header>
 
-      <h1>${verdict(s.compliance)}</h1>
-      <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W</div>
+      <section class="summary-head">
+        <div>
+          <h1>${verdict(s.compliance)}</h1>
+          <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W</div>
+        </div>
+        ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="/brand/crest.jpg" alt="Big Bib Energy — earned" />` : ''}
+      </section>
 
       <section class="kpis">
         <div class="hero-kpi"><span class="label">On target</span><span class="num">${pct(s.compliance)}</span></div>

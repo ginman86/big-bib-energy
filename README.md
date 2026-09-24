@@ -1,4 +1,4 @@
-# Zwifty Pants
+# Big Bib Energy
 
 A personal indoor-training app. No virtual world — just the workout, where you are in it,
 and whether you're holding the number.
@@ -20,6 +20,23 @@ Without a trainer connected, rides use a simulated rider (speed 1×/4×/16×, �
 - **ERG** — the trainer holds the target watts for you (FTMS *Set Target Power*).
 - **Target** — the trainer simulates a flat road (FTMS *Set Simulation*, 1% grade); you hit the
   number with gears and legs. This is where the on/under/over feedback earns its keep.
+
+## Rider avatar
+
+An original ink-style rider (male or female, chosen on the home screen) powers up with your
+zone: Z1–2 calm, Z3–4 glow, Z5 gold, Z6 gold + lightning, Z7 crimson. Images live in
+`public/avatar/{m,f}-{1..5}.jpg` and were generated with Nano Banana 2 via OpenRouter using
+`scripts/gen-image.py` (needs `OPENROUTER_API_KEY` in `.env.local`). Each level is an edit of the
+calm image, with the matching male level passed as a style reference for the female set.
+
+## Brand
+
+Logos were generated with Nano Banana Pro (`--model google/gemini-3-pro-image`, better lettering).
+The header wordmark is live text; the monogram is the favicon, the club patch sits on the home
+screen, and the flaming-bibs crest appears on the summary when a ride is ≥ 90% on target.
+
+Full-resolution masters for every generated image live in `art/` (not served); the web-sized
+copies are in `public/`.
 
 ## Layout
 

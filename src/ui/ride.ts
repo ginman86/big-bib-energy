@@ -1,3 +1,4 @@
+import { LevelFilter, powerLevel } from '../core/avatar';
 import { bandHalfWidth } from '../core/compliance';
 import { clock, pct } from '../core/format';
 import { Session, Snapshot } from '../core/session';
@@ -6,6 +7,7 @@ import { zoneFor } from '../core/zones';
 import { SimulatedTrainer } from '../devices/simulated';
 import type { HeartRateMonitor } from '../devices/heart-rate';
 import type { ControlMode, Trainer } from '../devices/trainer';
+import { Avatar, Rider } from './avatar';
 import { $, esc, html, setText } from './dom';
 import { drawProfile } from './profile';
 
@@ -16,6 +18,7 @@ export interface RideProps {
   trainer: Trainer;
   /** A standalone strap takes precedence over any HR the trainer reports. */
   heartRate?: HeartRateMonitor;
+  avatar: Rider | 'off';
   onModeChange(mode: ControlMode): void;
   onFinish(session: Session): void;
   onQuit(): void;
@@ -38,7 +41,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const page = html(`
     <main class="ride">
       <header class="ride-head">
-        <span class="wordmark">Z<i>/</i>P</span>
+        <span class="wordmark">BB<i>/</i>E</span>
         <span class="title">${esc(workout.name)}</span>
         <span class="spacer"></span>
         <div class="seg" data-role="mode">
@@ -53,7 +56,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       <canvas class="overview"></canvas>
       <canvas class="window"></canvas>
 
-      <section class="hero">
+      <section class="hero${props.avatar !== 'off' ? ' with-avatar' : ''}">
         <div class="power num"><span data-f="power">0</span><small>W</small></div>
         <div class="verdict">
           <div class="gauge-target"><span class="label">Target</span><span class="num" data-f="target">—</span><span class="label">W</span></div>
@@ -102,6 +105,10 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const overview = $<HTMLCanvasElement>(page, '.overview');
   const windowCanvas = $<HTMLCanvasElement>(page, '.window');
   const pauseBtn = $<HTMLButtonElement>(page, '[data-role=pause]');
+
+  const avatar = props.avatar !== 'off' ? new Avatar(props.avatar) : undefined;
+  const levels = new LevelFilter();
+  if (avatar) $(page, '.hero').prepend(avatar.el);
 
   // Overlay for ready / paused.
   const veil = html(`
@@ -248,6 +255,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     const live = session.status === 'running';
     docEl.dataset.band = live && !s.settling ? s.band : '';
     docEl.dataset.settling = String(s.settling);
+    // Stay calm until the ride is actually rolling.
+    avatar?.set(levels.update(live ? powerLevel(zoneFor(s.powerW / ftp)) : 1, now));
 
     setText(fields.elapsed, clock(s.elapsed));
     setText(fields.power, String(Math.round(s.powerW)));

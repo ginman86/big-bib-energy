@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { LevelFilter, powerLevel } from './avatar';
 import { classify } from './compliance';
 import { parseHeartRate, parseIndoorBikeData, setSimulation, setTargetPower } from './ftms';
 import { normalizedPower, trainingStress } from './metrics';
 import { Session } from './session';
 import { expand, ramp, repeat, steady, targetAt, totalDuration, Workout } from './workout';
+import { zoneFor } from './zones';
 
 const workout: Workout = {
   id: 't',
@@ -121,5 +123,30 @@ describe('ftms', () => {
   it('encodes control point commands little-endian', () => {
     expect([...setTargetPower(260)]).toEqual([0x05, 0x04, 0x01]);
     expect([...setSimulation({ gradePct: 1.5 })]).toEqual([0x11, 0, 0, 150, 0, 40, 51]);
+  });
+});
+
+describe('avatar', () => {
+  it('maps zones to five power levels', () => {
+    expect([0.5, 0.7, 0.8, 0.9, 1.0, 1.1, 1.3].map((f) => powerLevel(zoneFor(f)))).toEqual([1, 1, 2, 2, 3, 4, 5]);
+  });
+
+  it('powers up quickly and calms down slowly', () => {
+    const f = new LevelFilter(600, 1800);
+    expect(f.update(3, 0)).toBe(1);
+    expect(f.update(3, 599)).toBe(1);
+    expect(f.update(3, 600)).toBe(3);
+    expect(f.update(1, 1000)).toBe(3);
+    expect(f.update(1, 2500)).toBe(3);
+    expect(f.update(1, 2800)).toBe(1);
+  });
+
+  it('ignores brief blips across a boundary', () => {
+    const f = new LevelFilter(600, 1800);
+    f.update(2, 0);
+    f.update(2, 600);
+    expect(f.update(3, 700)).toBe(2);
+    expect(f.update(2, 900)).toBe(2); // back before the 600 ms up-delay elapsed
+    expect(f.update(2, 5000)).toBe(2);
   });
 });
