@@ -1,5 +1,6 @@
 import { clock, pct } from '../core/format';
 import type { Session } from '../core/session';
+import { asset } from './asset';
 import { $, esc, html } from './dom';
 import { drawProfile } from './profile';
 
@@ -34,7 +35,7 @@ export function renderSummary(root: HTMLElement, { session, onDone }: SummaryPro
           <h1>${verdict(s.compliance)}</h1>
           <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W</div>
         </div>
-        ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="/brand/crest.jpg" alt="Big Bib Energy — earned" />` : ''}
+        ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}
       </section>
 
       <section class="kpis">

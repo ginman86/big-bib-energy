@@ -1,6 +1,7 @@
 // The power-up rider. Five stacked images crossfade by level; levelling up shakes and flashes.
 
 import { POWER_LEVELS } from '../core/avatar';
+import { asset } from './asset';
 import { html } from './dom';
 
 export type Rider = 'm' | 'f';
@@ -8,7 +9,7 @@ export type Rider = 'm' | 'f';
 /** Flash colour when arriving at each level. */
 const FLASH: Record<number, string> = { 2: '#ece8df', 3: '#e8b84a', 4: '#7db4ff', 5: '#c8102e' };
 
-const src = (rider: Rider, level: number) => `/avatar/${rider}-${level}.jpg`;
+const src = (rider: Rider, level: number) => asset(`avatar/${rider}-${level}.jpg`);
 
 export class Avatar {
   readonly el: HTMLElement;

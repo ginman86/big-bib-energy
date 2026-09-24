@@ -12,6 +12,8 @@ npm test           # core unit tests
 npm run typecheck  # app + DOM-free core check
 ```
 
+Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main`.
+
 Bluetooth trainers need Chrome or Edge (desktop or Android), served from `localhost` or HTTPS.
 Without a trainer connected, rides use a simulated rider (speed 1×/4×/16×, ↑/↓ to push it off target).
 

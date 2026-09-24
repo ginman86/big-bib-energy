@@ -7,6 +7,7 @@ import { bluetoothAvailable } from '../devices/ftms-trainer';
 import type { HeartRateMonitor } from '../devices/heart-rate';
 import type { ControlMode, Trainer } from '../devices/trainer';
 import { LIBRARY } from '../workouts/library';
+import { asset } from './asset';
 import { $, esc, html } from './dom';
 import { drawProfile } from './profile';
 import { loadHistory, Settings } from './storage';
@@ -47,7 +48,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
       <section class="hero-head">
         <div class="headline">
           <h1>Hold<br/><em>the line.</em></h1>
-          <img class="patch" src="/brand/patch.jpg" alt="Big Bib Energy club patch" />
+          <img class="patch" src="${asset('brand/patch.jpg')}" alt="Big Bib Energy club patch" />
         </div>
         <div class="month">
           <div><span class="label">Rides · month</span><span class="num">${month.rides}</span></div>
