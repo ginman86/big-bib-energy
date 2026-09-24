@@ -1,7 +1,7 @@
 import './ui/styles.css';
 import type { Session } from './core/session';
 import type { Workout } from './core/workout';
-import { FtmsTrainer } from './devices/ftms-trainer';
+import { BluetoothTrainer, connectTrainer } from './devices/bluetooth-trainer';
 import { HeartRateMonitor } from './devices/heart-rate';
 import { SimulatedTrainer } from './devices/simulated';
 import type { Trainer } from './devices/trainer';
@@ -12,7 +12,7 @@ import { renderSummary } from './ui/summary';
 
 const app = document.getElementById('app')!;
 let settings = loadSettings();
-let realTrainer: FtmsTrainer | undefined;
+let realTrainer: BluetoothTrainer | undefined;
 let heartRate: HeartRateMonitor | undefined;
 let teardown: (() => void) | undefined;
 
@@ -33,9 +33,8 @@ function home() {
         home();
       },
       async onConnect() {
-        const t = new FtmsTrainer();
         try {
-          await t.connect();
+          const t = await connectTrainer();
           t.onDisconnect = () => {
             realTrainer = undefined;
           };

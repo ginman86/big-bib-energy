@@ -10,6 +10,8 @@ import type { ControlMode, Trainer } from './trainer';
 export class SimulatedTrainer implements Trainer {
   readonly name = 'Simulated rider';
   readonly simulated = true;
+  readonly controllable = true;
+  readonly protocol = 'Simulated';
 
   mode: ControlMode = 'erg';
   /** What the simulated human is aiming for (the on-screen target). */

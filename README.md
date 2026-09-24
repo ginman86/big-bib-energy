@@ -17,6 +17,19 @@ Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `mai
 Bluetooth trainers need Chrome or Edge (desktop or Android), served from `localhost` or HTTPS.
 Without a trainer connected, rides use a simulated rider (speed 1×/4×/16×, ↑/↓ to push it off target).
 
+## Trainers
+
+One "Connect trainer" button; the app picks the best protocol the device offers:
+
+| Device | Protocol | Modes |
+|---|---|---|
+| Elite Suito, Wahoo KICKR on current firmware, most modern trainers | FTMS | ERG + Target |
+| Older Wahoo KICKR / KICKR Core firmware | Wahoo control over Cycling Power | ERG + Target |
+| Any Bluetooth power meter (pedals, cranks, bike) | Cycling Power, read-only | Target only |
+
+The Wahoo protocol is undocumented; encodings follow GoldenCheetah and Auuki. Protocol selection
+and command bytes were verified against a scripted fake device, not yet real KICKR hardware.
+
 ## Modes
 
 - **ERG** — the trainer holds the target watts for you (FTMS *Set Target Power*).
@@ -49,8 +62,9 @@ src/core/      Pure logic, no DOM (type-checked with tsconfig.core.json). Portab
   compliance.ts  On/under/over classification and per-block scoring
   metrics.ts     NP, IF, TSS
   ftms.ts        Bluetooth FTMS / Heart Rate byte encode/decode
+  cps.ts         Cycling Power decode, crank cadence, Wahoo control encoders
   history.ts     Ride records and rollups
-src/devices/   Trainer interface, simulated rider, Web Bluetooth FTMS trainer
+src/devices/   Trainer interface, simulated rider, Bluetooth trainers (FTMS / Wahoo / power meter), HR strap
 src/ui/        Home, ride, and summary screens; canvas profile renderer
 src/workouts/  Built-in workout library
 ```
@@ -58,6 +72,7 @@ src/workouts/  Built-in workout library
 ## Roadmap
 
 - [ ] Verify against a real Elite Suito (ERG response, SIM mode feel)
+- [ ] Verify against a real Wahoo KICKR (FTMS and legacy Wahoo protocol)
 - [x] Separate heart-rate strap connection (verify with Garmin HRM)
 - [ ] `.zwo` import
 - [ ] `.fit` export

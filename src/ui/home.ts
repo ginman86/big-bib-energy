@@ -3,7 +3,7 @@ import { since, startOfMonth, totals } from '../core/history';
 import { normalizedPower, trainingStress } from '../core/metrics';
 import { expand, peakFraction, targetAt, totalDuration, Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
-import { bluetoothAvailable } from '../devices/ftms-trainer';
+import { bluetoothAvailable } from '../devices/bluetooth-trainer';
 import type { HeartRateMonitor } from '../devices/heart-rate';
 import type { ControlMode, Trainer } from '../devices/trainer';
 import { LIBRARY } from '../workouts/library';
@@ -82,7 +82,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
           <div style="display:flex;gap:14px;align-items:center">
             ${
               real
-                ? `<button class="btn" data-role="disconnect">Disconnect</button><span class="trainer-status">● ${esc(real.name)}</span>`
+                ? `<button class="btn" data-role="disconnect">Disconnect</button><span class="trainer-status">● ${esc(real.name)} · ${esc(real.protocol)}${real.controllable ? '' : ' (Target mode only)'}</span>`
                 : `<button class="btn" data-role="connect" ${hasBt ? '' : 'disabled'}>Connect trainer</button>
                    <span class="trainer-status">${hasBt ? 'Simulated rider until connected' : 'Bluetooth needs Chrome or Edge · using simulated rider'}</span>`
             }

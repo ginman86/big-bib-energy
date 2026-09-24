@@ -142,6 +142,10 @@ button {
   background: var(--text);
   color: var(--bg);
 }
+.seg button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 
 /* ——— Home ——— */
 

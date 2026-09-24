@@ -35,7 +35,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const { workout, ftp, trainer } = props;
   const session = new Session(workout, ftp);
   const sim = trainer instanceof SimulatedTrainer ? trainer : undefined;
-  let mode = props.mode;
+  // A read-only power meter can't hold watts for you.
+  let mode: ControlMode = trainer.controllable ? props.mode : 'target';
   let speed = 1;
 
   const page = html(`
@@ -156,6 +157,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   }
 
   function applyMode(m: ControlMode) {
+    if (!trainer.controllable) m = 'target';
     mode = m;
     page.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.mode === m)));
     if (m === 'target') void trainer.setGrade(TARGET_MODE_GRADE);
@@ -213,6 +215,11 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   window.addEventListener('keydown', onKey);
 
   root.append(page);
+  if (!trainer.controllable) {
+    const erg = $<HTMLButtonElement>(page, '[data-mode=erg]');
+    erg.disabled = true;
+    erg.title = `${trainer.name} is a power meter — ERG needs a controllable trainer`;
+  }
   applyMode(mode);
   showVeil('ready');
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { LevelFilter, powerLevel } from './avatar';
 import { classify } from './compliance';
+import { CrankCadence, parseCyclingPower, wahooErg, wahooGrade, wahooSimMode, wahooUnlock } from './cps';
 import { parseHeartRate, parseIndoorBikeData, setSimulation, setTargetPower } from './ftms';
 import { normalizedPower, trainingStress } from './metrics';
 import { Session } from './session';
@@ -148,5 +149,46 @@ describe('avatar', () => {
     expect(f.update(3, 700)).toBe(2);
     expect(f.update(2, 900)).toBe(2); // back before the 600 ms up-delay elapsed
     expect(f.update(2, 5000)).toBe(2);
+  });
+});
+
+describe('cycling power + wahoo', () => {
+  it('parses power and crank data, skipping earlier optional fields', () => {
+    // flags: pedal balance (bit0), wheel revs (bit4), crank revs (bit5)
+    const v = new DataView(new ArrayBuffer(2 + 2 + 1 + 6 + 4));
+    v.setUint16(0, 1 | (1 << 4) | (1 << 5), true);
+    v.setInt16(2, 212, true);
+    v.setUint8(4, 50);
+    v.setUint32(5, 12345, true);
+    v.setUint16(9, 999, true);
+    v.setUint16(11, 400, true);
+    v.setUint16(13, 2048, true);
+    expect(parseCyclingPower(v)).toEqual({ power: 212, crank: { revs: 400, time: 2048 } });
+  });
+
+  it('parses power-only measurements', () => {
+    const v = new DataView(new ArrayBuffer(4));
+    v.setInt16(2, 180, true);
+    expect(parseCyclingPower(v)).toEqual({ power: 180 });
+  });
+
+  it('derives cadence from crank deltas, across uint16 wraparound', () => {
+    const c = new CrankCadence();
+    expect(c.update({ revs: 65534, time: 65000 }, 0)).toBeUndefined();
+    // 3 revs in 2 s (2048 ticks), wrapping both counters: 90 rpm
+    expect(c.update({ revs: 1, time: (65000 + 2048) % 65536 }, 2000)).toBe(90);
+    // No new crank event: holds, then drops to 0 after 3 s
+    expect(c.update({ revs: 1, time: (65000 + 2048) % 65536 }, 3000)).toBe(90);
+    expect(c.update({ revs: 1, time: (65000 + 2048) % 65536 }, 5500)).toBe(0);
+  });
+
+  it('encodes wahoo commands like GoldenCheetah / Auuki', () => {
+    expect([...wahooUnlock()]).toEqual([0x20, 0xee, 0xfc]);
+    expect([...wahooErg(260)]).toEqual([0x42, 0x04, 0x01]);
+    // 75 kg -> 7500, crr 0.004 -> 40, cw 0.51 -> 510
+    expect([...wahooSimMode()]).toEqual([0x43, 0x4c, 0x1d, 40, 0, 0xfe, 0x01]);
+    // 0% -> 32768 (0x8000); 1% -> 33096 (0x8148)
+    expect([...wahooGrade(0)]).toEqual([0x46, 0x00, 0x80]);
+    expect([...wahooGrade(1)]).toEqual([0x46, 0x48, 0x81]);
   });
 });

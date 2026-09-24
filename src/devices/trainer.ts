@@ -9,6 +9,10 @@ export type ControlMode = 'erg' | 'target';
 export interface Trainer {
   readonly name: string;
   readonly simulated: boolean;
+  /** False for read-only power sources (a plain power meter): Target mode only. */
+  readonly controllable: boolean;
+  /** How it's controlled, for display: 'FTMS', 'Wahoo', 'Power meter', 'Simulated'. */
+  readonly protocol: string;
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   latest(): Reading;
