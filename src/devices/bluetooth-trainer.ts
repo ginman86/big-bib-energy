@@ -33,6 +33,9 @@ import { RateMeter } from '../core/latency';
 import type { Reading } from '../core/session';
 import type { Trainer } from './trainer';
 
+/** A trainer silent for this long isn't being pedalled (some stop notifying when idle). */
+const STALE_MS = 3000;
+
 export const bluetoothAvailable = () => typeof navigator !== 'undefined' && 'bluetooth' in navigator;
 
 type Bytes = Uint8Array<ArrayBuffer>;
@@ -77,6 +80,9 @@ export abstract class BluetoothTrainer implements Trainer {
   }
 
   latest(): Reading {
+    // Don't freeze on the last number if the trainer has gone quiet.
+    const age = this.rate.ageMs(performance.now());
+    if (age !== undefined && age > STALE_MS) return { ...this.reading, power: 0, cadence: 0 };
     return this.reading;
   }
 

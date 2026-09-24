@@ -43,7 +43,7 @@ function colors(): Palette {
 }
 
 /** Sizes the backing store to the element's CSS size × devicePixelRatio. */
-function prepare(canvas: HTMLCanvasElement) {
+export function prepare(canvas: HTMLCanvasElement) {
   const dpr = window.devicePixelRatio || 1;
   const { width, height } = canvas.getBoundingClientRect();
   const w = Math.max(1, Math.round(width * dpr));

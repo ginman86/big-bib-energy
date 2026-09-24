@@ -1,6 +1,7 @@
 import { LevelFilter, powerLevel } from '../core/avatar';
 import { bandHalfWidth } from '../core/compliance';
 import { ErgGovernor, ErgState } from '../core/erg';
+import { hrZoneFor } from '../core/hr';
 import { leadTarget, StepResponse } from '../core/latency';
 import { clock, pct } from '../core/format';
 import { Session, Snapshot } from '../core/session';
@@ -11,6 +12,7 @@ import type { HeartRateMonitor } from '../devices/heart-rate';
 import type { ControlMode, Trainer } from '../devices/trainer';
 import { Avatar, Rider } from './avatar';
 import { $, esc, html, setText } from './dom';
+import { drawHrStrip, hrZoneColor } from './hr-chart';
 import { drawProfile } from './profile';
 
 export interface RideProps {
@@ -21,6 +23,8 @@ export interface RideProps {
   /** A standalone strap takes precedence over any HR the trainer reports. */
   heartRate?: HeartRateMonitor;
   avatar: Rider | 'off';
+  /** Enables HR zones on the HR strip. */
+  lthr?: number;
   onModeChange(mode: ControlMode): void;
   onFinish(session: Session): void;
   onQuit(): void;
@@ -66,6 +70,14 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
       <canvas class="overview"></canvas>
       <canvas class="window"></canvas>
+      <section class="hr-strip">
+        <canvas class="hr-chart"></canvas>
+        <div class="hr-readout">
+          <span class="label">Heart rate</span>
+          <span class="num" data-f="hr">—</span>
+          <span class="label" data-f="hrzone">${props.lthr ? '' : 'Set LTHR for zones'}</span>
+        </div>
+      </section>
 
       <aside class="hud" hidden></aside>
 
@@ -89,7 +101,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
       <footer class="strip">
         <div><span class="label">Cadence</span><span class="num" data-f="cadence">—</span></div>
-        <div><span class="label">Heart rate</span><span class="num" data-f="hr">—</span></div>
+        <div><span class="label">Interval avg</span><span class="num" data-f="segavg">—</span></div>
         <div><span class="label">Interval on target</span><span class="num" data-f="segpct">—</span></div>
         <div><span class="label">Ride on target</span><span class="num" data-f="ridepct">—</span></div>
         <div class="next"><span class="label">Next</span><span class="num" data-f="next">—</span></div>
@@ -108,6 +120,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     segment: f('segment'),
     cadence: f('cadence'),
     hr: f('hr'),
+    hrzone: f('hrzone'),
+    segavg: f('segavg'),
     segpct: f('segpct'),
     ridepct: f('ridepct'),
     next: f('next'),
@@ -117,6 +131,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const nextBox = $(page, '.next');
   const overview = $<HTMLCanvasElement>(page, '.overview');
   const windowCanvas = $<HTMLCanvasElement>(page, '.window');
+  const hrCanvas = $<HTMLCanvasElement>(page, '.hr-chart');
   const pauseBtn = $<HTMLButtonElement>(page, '[data-role=pause]');
 
   const avatar = props.avatar !== 'off' ? new Avatar(props.avatar) : undefined;
@@ -315,6 +330,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       ['Trainer', `${trainer.name} · ${trainer.protocol}`],
       ['Data rate', st ? `${st.hz.toFixed(1)} Hz` : 'simulated'],
       ['Last reading', st ? ms(st.ageMs) : '—'],
+      ['Raw power · cadence', `${trainer.latest().power} W · ${trainer.latest().cadence ?? '—'} rpm`],
       ['ERG step response', steps.last === undefined ? 'no steps yet' : `${ms(steps.last)} (avg ${ms(steps.average)}, n=${steps.samples.length})`],
       ['ERG lead', `${ERG_LEAD_S} s`],
       ['Display smoothing', '3 s average + glide'],
@@ -331,7 +347,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
     setText(fields.elapsed, clock(s.elapsed));
     // Glide toward the new value instead of snapping; ~0.2 s, far below the 3 s smoothing.
-    shownPower += (s.powerW - shownPower) * (1 - Math.exp(-realDt / GLIDE_S));
+    // Stopped pedalling is a hard 0: snap rather than glide down.
+    shownPower = s.powerW === 0 ? 0 : shownPower + (s.powerW - shownPower) * (1 - Math.exp(-realDt / GLIDE_S));
     setText(fields.power, String(Math.round(shownPower)));
     if (!hud.hidden && now - lastHud > 250) {
       lastHud = now;
@@ -357,6 +374,12 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     }
     setText(fields.cadence, s.cadence ? String(s.cadence) : '—');
     setText(fields.hr, s.heartRate ? String(s.heartRate) : '—');
+    if (props.lthr && s.heartRate) {
+      const z = hrZoneFor(s.heartRate, props.lthr);
+      setText(fields.hrzone, `Z${z.id} · ${z.name}`);
+      fields.hr.style.color = fields.hrzone.style.color = hrZoneColor(z.id);
+    }
+    setText(fields.segavg, s.segmentAvgPower ? `${Math.round(s.segmentAvgPower)} W` : '—');
     setText(fields.segpct, s.settling ? '—' : pct(s.segmentCompliance));
     setText(fields.ridepct, pct(s.totalCompliance));
     if (s.next) {
@@ -378,6 +401,14 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       live: { t: s.elapsed, power: s.powerW, target: s.targetW },
       tolerance: session.tolerance,
       detailed: true,
+    });
+    // The HR canvas is narrower (readout beside it); match the power chart's px/second so cursors align.
+    const hrSpan = WINDOW_SPAN * (hrCanvas.clientWidth / Math.max(1, windowCanvas.clientWidth));
+    drawHrStrip(hrCanvas, {
+      samples: session.samples,
+      range: [t0, t0 + hrSpan],
+      lthr: props.lthr,
+      live: { t: s.elapsed, bpm: s.heartRate },
     });
     if (now - lastOverview > 500) {
       lastOverview = now;

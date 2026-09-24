@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LevelFilter, powerLevel } from './avatar';
 import { classify } from './compliance';
 import { ErgGovernor } from './erg';
+import { hrZoneFor, lthrFromMaxHr, maxHrFromAge, suggestLthr, sustainedMaxHr, timeInHrZones } from './hr';
 import { leadTarget, RateMeter, StepResponse } from './latency';
 import { CrankCadence, parseCyclingPower, wahooErg, wahooGrade, wahooSimMode, wahooUnlock } from './cps';
 import { parseHeartRate, parseIndoorBikeData, setSimulation, setTargetPower } from './ftms';
@@ -288,5 +289,65 @@ describe('latency', () => {
     s.reading(280, 2500); // within 5% of 300? 15 W band -> no
     s.reading(290, 3100); // yes
     expect(s.last).toBe(2100);
+  });
+});
+
+describe('heart rate', () => {
+  it('assigns LTHR zones', () => {
+    const lthr = 170;
+    expect([120, 140, 155, 165, 175].map((b) => hrZoneFor(b, lthr).id)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it('estimates from age and max HR', () => {
+    expect(maxHrFromAge(40)).toBe(180);
+    expect(lthrFromMaxHr(180)).toBe(162);
+  });
+
+  it('counts time in zones and finds a sustained max', () => {
+    const samples = [150, 150, 150, 176, 176, 176, 176, 176, 199, 176].map((heartRate) => ({ heartRate }));
+    expect(timeInHrZones(samples, 170)).toEqual([0, 3, 0, 0, 7]);
+    // The single 199 spike is averaged down.
+    expect(sustainedMaxHr(samples)).toBe(181);
+  });
+
+  it('suggests LTHR from long held blocks, ignoring short or missed ones', () => {
+    const block = (start: number, mins: number, power: number) =>
+      ({ index: 0, kind: 'steady' as const, start, end: start + mins * 60, from: power, to: power, label: '' });
+    const long = block(0, 10, 0.9);
+    const short = block(600, 3, 1.1);
+    const samples = Array.from({ length: 780 }, (_, t) => ({ t, heartRate: t < 600 ? 160 : 180 }));
+    const s = suggestLthr(samples, [
+      { segment: long, compliance: 0.9 },
+      { segment: short, compliance: 0.95 },
+    ]);
+    // 160 / (0.6 + 0.4 * 0.9) = 166.7
+    expect(s).toEqual({ lthr: 167, blocks: 1 });
+    expect(suggestLthr(samples, [{ segment: long, compliance: 0.5 }])).toBeUndefined();
+  });
+});
+
+describe('stopping pedalling', () => {
+  it('drops power to 0 immediately when cadence falls below the coast threshold', () => {
+    const s = new Session(workout, 200);
+    s.start();
+    for (let i = 0; i < 10; i++) s.advance(0.5, { power: 250, cadence: 90 });
+    expect(s.snapshot().powerW).toBe(250);
+    // Flywheel still spinning: trainer reports 180 W, but cadence is 5 rpm.
+    const snap = s.advance(0.5, { power: 180, cadence: 5 });
+    expect(snap.powerW).toBe(0);
+    s.advance(1, { power: 120, cadence: 0 });
+    expect(s.samples[s.samples.length - 1].power).toBe(0);
+    // Resuming refills the average from scratch, so it reads the new power right away.
+    expect(s.advance(0.5, { power: 200, cadence: 85 }).powerW).toBe(200);
+  });
+
+  it('releases ERG within about a second of stopping', () => {
+    const g = new ErgGovernor();
+    const base = { active: true, targetW: 200, powerW: 200 };
+    g.update({ ...base, nowMs: 0, cadence: 90 });
+    g.update({ ...base, nowMs: 1500, cadence: 90 });
+    g.update({ ...base, nowMs: 20_000, cadence: 90 });
+    expect(g.update({ ...base, nowMs: 20_100, cadence: 0 }).kind).toBe('erg');
+    expect(g.update({ ...base, nowMs: 21_100, cadence: 0 })).toEqual({ kind: 'free' });
   });
 });

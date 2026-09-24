@@ -1,5 +1,6 @@
 import { hoursMinutes, pct } from '../core/format';
 import { since, startOfMonth, totals } from '../core/history';
+import { LthrSource, lthrFromMaxHr, maxHrFromAge } from '../core/hr';
 import { normalizedPower, trainingStress } from '../core/metrics';
 import { expand, peakFraction, targetAt, totalDuration, Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
@@ -30,6 +31,16 @@ function estimate(w: Workout, ftp: number) {
   const watts = Array.from({ length: seconds }, (_, t) => (targetAt(segs, t) ?? 0) * ftp);
   const np = normalizedPower(watts);
   return { seconds, tss: trainingStress(seconds, np, ftp), focus: zoneFor(peakFraction(segs)).name };
+}
+
+function lthrNote(source?: LthrSource, maxSeen?: number): string {
+  const base = {
+    entered: 'Sets your HR zones',
+    max: 'From max HR · rides will refine it',
+    age: 'Estimated from age · rides will refine it',
+    learned: 'Learned from your rides',
+  }[source ?? 'entered'];
+  return maxSeen ? `${base} · max seen ${maxSeen}` : base;
 }
 
 export function renderHome(root: HTMLElement, props: HomeProps): () => void {
@@ -99,6 +110,22 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
             }
           </div>
         </div>
+        <div class="field">
+          <span class="label">LTHR (bpm)</span>
+          <div class="lthr-row">
+            <input class="ftp-input num" data-role="lthr" type="number" min="100" max="220" step="1" value="${settings.hr.lthr ?? ''}" placeholder="—" />
+            <div class="lthr-help">
+              <span class="trainer-status">${esc(lthrNote(settings.hr.source, settings.hr.maxSeen))}</span>
+              <button class="link" data-role="estimate-toggle">Don't know it?</button>
+            </div>
+          </div>
+          <div class="estimate" hidden>
+            <label><span class="label">Max HR</span><input class="mini-input num" data-role="maxhr" type="number" min="120" max="230" /></label>
+            <span class="trainer-status">or</span>
+            <label><span class="label">Age</span><input class="mini-input num" data-role="age" type="number" min="10" max="100" /></label>
+            <button class="btn" data-role="estimate">Estimate</button>
+          </div>
+        </div>
       </section>
 
       <ol class="workouts"></ol>
@@ -144,6 +171,22 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   page.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => props.onSettings({ ...settings, mode: b.dataset.mode as ControlMode })),
   );
+  const setHr = (lthr: number, source: LthrSource) => {
+    if (lthr >= 100 && lthr <= 220) props.onSettings({ ...settings, hr: { ...settings.hr, lthr, source } });
+  };
+  $<HTMLInputElement>(page, '[data-role=lthr]').addEventListener('change', (e) =>
+    setHr(Math.round(Number((e.target as HTMLInputElement).value)), 'entered'),
+  );
+  $(page, '[data-role=estimate-toggle]').addEventListener('click', () => {
+    const box = $(page, '.estimate');
+    box.hidden = !box.hidden;
+  });
+  $(page, '[data-role=estimate]').addEventListener('click', () => {
+    const maxHr = Number($<HTMLInputElement>(page, '[data-role=maxhr]').value);
+    const age = Number($<HTMLInputElement>(page, '[data-role=age]').value);
+    if (maxHr) setHr(lthrFromMaxHr(maxHr), 'max');
+    else if (age) setHr(lthrFromMaxHr(maxHrFromAge(age)), 'age');
+  });
   page.querySelectorAll<HTMLButtonElement>('[data-avatar]').forEach((b) =>
     b.addEventListener('click', () => props.onSettings({ ...settings, avatar: b.dataset.avatar as Settings['avatar'] })),
   );

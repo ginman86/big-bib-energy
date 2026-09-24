@@ -38,6 +38,7 @@ export interface Snapshot {
   heartRate?: number;
   segmentCompliance: number;
   totalCompliance: number;
+  segmentAvgPower: number;
 }
 
 export interface SegmentSummary {
@@ -65,6 +66,10 @@ export interface RideSummary {
 }
 
 const SMOOTHING_SECONDS = 3;
+
+/** Below this cadence the rider isn't pedalling, whatever a coasting flywheel reports. */
+export const COAST_RPM = 20;
+export const isCoasting = (r: Reading) => r.cadence !== undefined && r.cadence < COAST_RPM;
 
 export class Session {
   readonly segments: Segment[];
@@ -119,6 +124,12 @@ export class Session {
 
   /** `unscored`: time that shouldn't count against the rider (e.g. ERG still engaging). */
   advance(dt: number, reading: Reading, { unscored = false } = {}): Snapshot {
+    const coasting = isCoasting(reading);
+    if (coasting) {
+      // Stopped pedalling: show and record 0 W immediately instead of draining the 3 s average.
+      reading = { ...reading, power: 0 };
+      this.window = [];
+    }
     this.last = reading;
     this.unscored = unscored;
     if (this.status !== 'running' || dt <= 0) return this.snapshot();
@@ -126,7 +137,8 @@ export class Session {
     const seg = segmentAt(this.segments, this.elapsed);
     const targetW = this.targetWatts();
 
-    this.window.push({ t: this.elapsed, power: reading.power });
+    // While coasting the average stays empty, so resuming reads true power straight away.
+    if (!coasting) this.window.push({ t: this.elapsed, power: reading.power });
     while (this.window.length && this.window[0].t < this.elapsed - SMOOTHING_SECONDS) this.window.shift();
 
     if (seg && !unscored && !this.isSettling(seg)) {
@@ -169,6 +181,7 @@ export class Session {
       cadence: this.last.cadence,
       heartRate: this.last.heartRate,
       segmentCompliance: seg ? compliance(this.stats[seg.index]) : 0,
+      segmentAvgPower: seg ? avgPower(this.stats[seg.index]) : 0,
       totalCompliance: compliance(combine(this.stats)),
     };
   }

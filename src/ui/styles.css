@@ -14,6 +14,13 @@
   --under: #7d9bbd;
   --over: #e0503a;
 
+  /* HR zones: cool to hot, muted to sit with the monochrome UI */
+  --hr1: #6b7785;
+  --hr2: #7d9bbd;
+  --hr3: #b8b089;
+  --hr4: #e8b84a;
+  --hr5: #d9412f;
+
   /* Zone blocks: a grayscale ladder, harder = lighter */
   --z1: #232326;
   --z2: #2c2c30;
@@ -240,6 +247,55 @@ button {
   outline: none;
   border-color: var(--text);
 }
+.lthr-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+}
+.lthr-help {
+  display: grid;
+  gap: 2px;
+}
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.link:hover {
+  color: var(--text);
+}
+.estimate {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  margin-top: 10px;
+}
+.estimate[hidden] {
+  display: none;
+}
+.estimate label {
+  display: grid;
+  gap: 4px;
+}
+.mini-input {
+  width: 64px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text);
+  font-size: 20px;
+  padding: 0 0 2px;
+}
+.mini-input:focus {
+  outline: none;
+  border-color: var(--text);
+}
+
 .trainer-status {
   font-size: 13px;
   color: var(--text-2);
@@ -298,7 +354,7 @@ button {
 .ride {
   height: 100vh;
   display: grid;
-  grid-template-rows: auto 64px minmax(160px, 1fr) auto auto;
+  grid-template-rows: auto 64px minmax(140px, 1fr) 96px auto auto;
   gap: 0;
   padding: 18px 28px 22px;
   position: relative;
@@ -602,6 +658,39 @@ button {
   }
 }
 
+.hr-strip {
+  /* Fixed height: a canvas at height:100% of an auto row feeds back on itself and grows. */
+  --strip-h: 96px;
+  height: var(--strip-h);
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: var(--strip-h);
+  grid-template-columns: 1fr 170px;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.hr-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.hr-readout {
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 2px;
+}
+.hr-readout .num {
+  font-size: 48px;
+  font-weight: 300;
+  line-height: 1;
+  transition: color 400ms;
+}
+.hr-readout [data-f='hrzone'] {
+  transition: color 400ms;
+}
+
 .hud {
   position: absolute;
   top: 76px;
@@ -722,13 +811,76 @@ button {
   color: var(--text);
   font-weight: 500;
 }
-.summary canvas {
+.summary .power-chart-summary {
   width: 100%;
   height: 220px;
   display: block;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
+.section-title {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: 28px;
+  text-transform: uppercase;
+  margin: 48px 0 16px;
+}
+.hr-summary-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 48px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.hr-kpis {
+  display: flex;
+  gap: 36px;
+}
+.hr-kpis .num {
+  display: block;
+  font-size: 44px;
+  font-weight: 300;
+}
+.hr-zones {
+  display: grid;
+  gap: 8px;
+}
+.hr-zone-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 56px;
+  gap: 14px;
+  align-items: center;
+}
+.hr-zone-row .bar {
+  max-width: none;
+}
+.hr-zone-row .num {
+  text-align: right;
+}
+.hr-chart-summary {
+  width: 100%;
+  height: 110px;
+  display: block;
+  border-bottom: 1px solid var(--line);
+}
+.lthr-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-top: 20px;
+  padding: 18px 20px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+.lthr-card p {
+  margin: 6px 0 0;
+  color: var(--text-2);
+}
+.lthr-card b {
+  color: var(--text);
+}
+
 .intervals {
   width: 100%;
   border-collapse: collapse;
@@ -782,7 +934,10 @@ button {
     padding: 12px 16px;
     height: auto;
     min-height: 100vh;
-    grid-template-rows: auto 48px 180px auto auto;
+    grid-template-rows: auto 48px 180px 80px auto auto;
+  }
+  .hr-strip {
+    --strip-h: 80px;
   }
   .hero,
   .hero.with-avatar {
@@ -801,6 +956,17 @@ button {
   .next {
     grid-column: 1 / -1;
     text-align: left;
+  }
+  .hr-summary-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .hr-zone-row {
+    grid-template-columns: 110px 1fr 48px;
+  }
+  .lthr-card {
+    flex-direction: column;
+    align-items: flex-start;
   }
   .kpis {
     grid-template-columns: repeat(3, 1fr);

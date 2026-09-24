@@ -21,6 +21,9 @@ export interface ErgOptions {
   rampMs: number;
   releaseRpm: number;
   releaseHoldMs: number;
+  /** Below this cadence the rider has stopped: release much sooner. */
+  coastRpm: number;
+  coastHoldMs: number;
   /** Without a cadence sensor, treat this much power as "pedalling". */
   engageWatts: number;
 }
@@ -31,6 +34,8 @@ export const DEFAULT_ERG: ErgOptions = {
   rampMs: 10_000,
   releaseRpm: 40,
   releaseHoldMs: 3000,
+  coastRpm: 20,
+  coastHoldMs: 1000,
   engageWatts: 40,
 };
 
@@ -66,11 +71,14 @@ export class ErgGovernor {
         this.rampFrom = Math.min(i.targetW, Math.max(i.powerW, i.targetW * 0.3));
         break;
       case 'ramping':
-      case 'engaged':
-        if (this.held(bogged, i.nowMs, o.releaseHoldMs)) {
+      case 'engaged': {
+        // Stopped pedalling entirely: don't make the brake fight a coasting flywheel for long.
+        const coasting = i.cadence !== undefined && i.cadence < o.coastRpm;
+        if (this.held(bogged, i.nowMs, coasting ? o.coastHoldMs : o.releaseHoldMs)) {
           this.reset();
           return { kind: 'free' };
         }
+      }
     }
 
     if (this.state === 'ramping') {

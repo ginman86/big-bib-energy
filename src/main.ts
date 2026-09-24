@@ -1,4 +1,5 @@
 import './ui/styles.css';
+import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
 import type { Workout } from './core/workout';
 import { BluetoothTrainer, connectTrainer } from './devices/bluetooth-trainer';
@@ -84,6 +85,7 @@ function ride(workout: Workout) {
       trainer,
       heartRate,
       avatar: settings.avatar,
+      lthr: settings.hr.lthr,
       onModeChange(mode) {
         settings = { ...settings, mode };
         saveSettings(settings);
@@ -100,7 +102,23 @@ function summary(session: Session) {
     const { segments: _segments, ...rest } = s;
     appendHistory({ id: crypto.randomUUID(), startedAt: new Date(Date.now() - s.seconds * 1000).toISOString(), summary: rest });
   }
-  show((root) => renderSummary(root, { session, onDone: home }));
+  const maxHr = sustainedMaxHr(session.samples);
+  // Only real HR counts toward max seen, not the simulator's.
+  if (maxHr && (realTrainer || heartRate) && maxHr > (settings.hr.maxSeen ?? 0)) {
+    settings = { ...settings, hr: { ...settings.hr, maxSeen: maxHr } };
+    saveSettings(settings);
+  }
+  show((root) =>
+    renderSummary(root, {
+      session,
+      lthr: settings.hr.lthr,
+      onAcceptLthr(lthr) {
+        settings = { ...settings, hr: { ...settings.hr, lthr, source: 'learned' } };
+        saveSettings(settings);
+      },
+      onDone: home,
+    }),
+  );
 }
 
 home();

@@ -36,12 +36,27 @@ and command bytes were verified against a scripted fake device, not yet real KIC
   0% road until cadence holds above 55 rpm, then ramps from your current power to the target over
   10 s. It releases again if cadence drops below 40 rpm for 3 s (the ERG "death spiral") or when
   paused. Engaging time isn't scored.
+- Stopping: below 20 rpm the rider is "coasting" — power reads and records 0 immediately
+  (a spinning-down flywheel isn't rider power), and ERG releases after 1 s. A trainer that sends
+  nothing for 3 s is treated as 0 W / 0 rpm rather than freezing on its last value.
 - ERG step changes are sent 1 s early (ERG lead) so the trainer's 1–3 s control loop lands the
   new power on the interval boundary; ramps aren't led.
 - Press **L** on the ride screen for a latency HUD: trainer data rate, age of the last reading,
   and measured ERG step response.
 - **Target** — the trainer simulates a flat road (FTMS *Set Simulation*, 1% grade); you hit the
   number with gears and legs. This is where the on/under/over feedback earns its keep.
+
+## Heart rate
+
+Zones are anchored on **LTHR** (lactate threshold heart rate), the HR counterpart of FTP:
+Z1 < 81%, Z2 81–89%, Z3 90–93%, Z4 94–99%, Z5 ≥ 100% (Friel's cycling zones, 5a–c merged).
+
+- Set LTHR on the home screen, or estimate it from max HR (LTHR ≈ 90% of max) or age
+  (max HR = 208 − 0.7 × age).
+- The ride screen shows an HR strip on the same timeline as the power chart, over zone bands.
+- The summary shows avg/max HR, time in zone, and, after steady ≥ 8 min blocks at ≥ 88% FTP that
+  you actually held, suggests an updated LTHR. Highest sustained (5 s) HR from real sensors is
+  remembered as "max seen".
 
 ## Rider avatar
 
@@ -70,6 +85,7 @@ src/core/      Pure logic, no DOM (type-checked with tsconfig.core.json). Portab
   metrics.ts     NP, IF, TSS
   erg.ts         ERG soft start / low-cadence release
   latency.ts     ERG lead, notification rate, ERG step-response timing
+  hr.ts          LTHR zones, estimates, time in zone, LTHR suggestions
   ftms.ts        Bluetooth FTMS / Heart Rate byte encode/decode
   cps.ts         Cycling Power decode, crank cadence, Wahoo control encoders
   history.ts     Ride records and rollups

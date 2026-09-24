@@ -1,12 +1,62 @@
 import { clock, pct } from '../core/format';
+import { HR_ZONES, suggestLthr, sustainedMaxHr, timeInHrZones } from '../core/hr';
+import { mean } from '../core/metrics';
 import type { Session } from '../core/session';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
+import { drawHrStrip } from './hr-chart';
 import { drawProfile } from './profile';
 
 export interface SummaryProps {
   session: Session;
+  lthr?: number;
+  onAcceptLthr(lthr: number): void;
   onDone(): void;
+}
+
+function hrSection(session: Session, lthr: number | undefined, blocks: ReturnType<Session['summary']>['segments']): string {
+  const hr = session.samples.flatMap((x) => (x.heartRate ? [x.heartRate] : []));
+  if (!hr.length) return '';
+  const zones = lthr ? timeInHrZones(session.samples, lthr) : [];
+  const total = zones.reduce((a, b) => a + b, 0) || 1;
+  const suggestion = suggestLthr(session.samples, blocks);
+  const worthSuggesting = suggestion && (!lthr || Math.abs(suggestion.lthr - lthr) >= 3);
+  return `
+    <section class="hr-summary">
+      <h2 class="section-title">Heart rate</h2>
+      <div class="hr-summary-grid">
+        <div class="hr-kpis">
+          <div><span class="label">Avg</span><span class="num">${Math.round(mean(hr))}</span></div>
+          <div><span class="label">Max</span><span class="num">${sustainedMaxHr(session.samples) ?? '—'}</span></div>
+          ${lthr ? `<div><span class="label">LTHR</span><span class="num">${lthr}</span></div>` : ''}
+        </div>
+        ${
+          lthr
+            ? `<div class="hr-zones">${HR_ZONES.map(
+                (z, i) => `
+              <div class="hr-zone-row">
+                <span class="label">Z${z.id} · ${z.name}</span>
+                <div class="bar"><span style="width:${(zones[i] / total) * 100}%;background:var(--hr${z.id})"></span></div>
+                <span class="num">${clock(zones[i])}</span>
+              </div>`,
+              ).join('')}</div>`
+            : `<p class="trainer-status">Set your LTHR on the home screen to see time in zones.</p>`
+        }
+      </div>
+      <canvas class="hr-chart-summary"></canvas>
+      ${
+        worthSuggesting
+          ? `<div class="lthr-card">
+              <div>
+                <span class="label">Zone check</span>
+                <p>Your heart rate settled across ${suggestion.blocks} sustained block${suggestion.blocks > 1 ? 's' : ''}.
+                Estimated LTHR <b>${suggestion.lthr} bpm</b>${lthr ? ` (currently ${lthr})` : ''}.</p>
+              </div>
+              <button class="btn primary" data-role="accept-lthr" data-lthr="${suggestion.lthr}">Update zones</button>
+            </div>`
+          : ''
+      }
+    </section>`;
 }
 
 /** Hold the line this well and you've earned the flaming bibs. */
@@ -19,7 +69,7 @@ function verdict(compliance: number): string {
   return 'Ride <em>logged.</em>';
 }
 
-export function renderSummary(root: HTMLElement, { session, onDone }: SummaryProps): () => void {
+export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, onDone }: SummaryProps): () => void {
   const s = session.summary();
   const scored = s.segments.filter((x) => x.under + x.over + x.compliance > 0);
 
@@ -47,7 +97,9 @@ export function renderSummary(root: HTMLElement, { session, onDone }: SummaryPro
         <div><span class="label">IF</span><span class="num">${s.intensityFactor.toFixed(2)}</span></div>
       </section>
 
-      <canvas></canvas>
+      <canvas class="power-chart-summary"></canvas>
+
+      ${hrSection(session, lthr, s.segments)}
 
       <table class="intervals">
         <thead>
@@ -84,9 +136,17 @@ export function renderSummary(root: HTMLElement, { session, onDone }: SummaryPro
   `);
 
   root.append(page);
-  const canvas = $<HTMLCanvasElement>(page, 'canvas');
-  const draw = () =>
+  const canvas = $<HTMLCanvasElement>(page, '.power-chart-summary');
+  const hrCanvas = page.querySelector<HTMLCanvasElement>('.hr-chart-summary');
+  const draw = () => {
     drawProfile(canvas, { segments: session.segments, ftp: s.ftp, samples: session.samples, tolerance: session.tolerance, detailed: true });
+    if (hrCanvas) drawHrStrip(hrCanvas, { samples: session.samples, range: [0, session.duration], lthr });
+  };
+  page.querySelector<HTMLButtonElement>('[data-role=accept-lthr]')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    onAcceptLthr(Number(btn.dataset.lthr));
+    btn.replaceWith(Object.assign(document.createElement('span'), { className: 'label', textContent: 'Zones updated ✓' }));
+  });
   draw();
   window.addEventListener('resize', draw);
   $(page, '[data-role=done]').addEventListener('click', onDone);
