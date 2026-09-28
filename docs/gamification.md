@@ -141,10 +141,10 @@ mode"*) and records the ride that first earned each tier.
 
 ## Art
 
-- **Patches:** ~24 embroidered club patches with Nano Banana Pro, matching the home-screen patch
+- **Patches:** 23 embroidered club patches with Nano Banana Pro, matching the home-screen patch
   (round, ivory + crimson on black, one icon each, name in the ring). Tiers are the same patch
   with a bronze / silver / gold outer ring: base art once per achievement, rings as CSS so we
-  don't pay for tier variants. ≈ 24 × $0.14 ≈ $3.50.
+  don't pay for tier variants. ≈ 23 × $0.14 ≈ $3.20.
 - **Cosmetics:** per rider (m/f) × 5 power levels per variant (Super Sweatyan, SS3, Ultra
   Instinct) plus palette recolours → ~40 edits ≈ $3 with Nano Banana 2, reusing the consistency
   technique from the current avatars.

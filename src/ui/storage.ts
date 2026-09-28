@@ -11,6 +11,8 @@ export interface Settings {
   mode: ControlMode;
   avatar: Rider | 'off';
   hr: HrProfile;
+  /** Rides per week that keep the streak alive. */
+  weeklyGoal: number;
   /** Last-used devices, for auto-connect and the "Reconnect …" button. */
   devices: { trainer?: RememberedDevice; hr?: RememberedDevice };
 }
@@ -40,7 +42,7 @@ function write(key: string, value: unknown) {
   }
 }
 
-export const loadSettings = (): Settings => read<Settings>(SETTINGS_KEY, { ftp: 250, mode: 'erg', avatar: 'm', hr: {}, devices: {} });
+export const loadSettings = (): Settings => read<Settings>(SETTINGS_KEY, { ftp: 250, mode: 'erg', avatar: 'm', hr: {}, weeklyGoal: 3, devices: {} });
 export const saveSettings = (s: Settings) => write(SETTINGS_KEY, s);
 
 export function loadHistory(): RideRecord[] {

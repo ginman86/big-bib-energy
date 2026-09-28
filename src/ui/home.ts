@@ -2,7 +2,7 @@ import { hoursMinutes, pct } from '../core/format';
 import { monthTotals } from '../core/history';
 import { LthrSource, lthrFromMaxHr, maxHrFromAge } from '../core/hr';
 import { normalizedPower, trainingStress } from '../core/metrics';
-import type { HistoryRide } from '../core/progression';
+import type { HistoryRide, Progression } from '../core/progression';
 import { expand, peakFraction, targetAt, totalDuration, Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
 import { bluetoothAvailable } from '../devices/bluetooth-trainer';
@@ -10,6 +10,7 @@ import type { ControlMode } from '../devices/trainer';
 import { LIBRARY } from '../workouts/library';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
+import { progressPanel } from './progress';
 
 function accountArea(p: HomeProps): string {
   if (p.account) {
@@ -44,6 +45,8 @@ export interface HomeProps {
   settings: Settings;
   /** Merged local + synced rides, oldest first. */
   history: HistoryRide[];
+  progression: Progression;
+  onWeeklyGoal(goal: number): void;
   account?: { name: string; canUpload: boolean };
   accountNote?: string;
   /** Strava's FTP, when it differs from ours. */
@@ -125,6 +128,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
         </div>
       </section>
 
+      ${progressPanel(props.progression, settings.weeklyGoal)}
       ${
         props.ftpOffer
           ? `<div class="offer">
@@ -217,6 +221,14 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   page.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => props.onSettings({ ...settings, mode: b.dataset.mode as ControlMode })),
   );
+  page.querySelectorAll<HTMLButtonElement>('[data-goal]').forEach((b) =>
+    b.addEventListener('click', () => props.onWeeklyGoal(settings.weeklyGoal + Number(b.dataset.goal))),
+  );
+  page.querySelector('[data-role=toggle-wall]')?.addEventListener('click', (e) => {
+    const wall = $(page, '.patch-wall');
+    wall.hidden = !wall.hidden;
+    (e.currentTarget as HTMLElement).textContent = wall.hidden ? 'Show the wall' : 'Hide the wall';
+  });
   page.querySelector('[data-role=strava-connect]')?.addEventListener('click', () => props.onStravaConnect());
   page.querySelector('[data-role=signout]')?.addEventListener('click', () => props.onSignOut());
   page.querySelector('[data-role=use-strava-ftp]')?.addEventListener('click', () => props.onUseStravaFtp(props.ftpOffer!));

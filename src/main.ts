@@ -3,7 +3,8 @@ import { Account, completeStravaSignIn, loadAccount, saveRemoteSettings, signOut
 import { syncHistory } from './api/history';
 import { flushQueue, pendingRide, sendRide } from './api/uploads';
 import { toHistoryRide } from './core/history';
-import type { HistoryRide } from './core/progression';
+import { earnedBy } from './core/achievements';
+import { HistoryRide, progression } from './core/progression';
 import { computeFacts, FactsRecorder } from './core/facts';
 import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
@@ -119,7 +120,10 @@ async function autoConnect() {
 // ——— Account ———
 
 /** Settings that follow you between devices. Paired devices stay per-browser. */
-const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr });
+const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr, weeklyGoal: s.weeklyGoal });
+
+const progressionOf = (rides: HistoryRide[]) =>
+  progression(rides, { weeklyGoal: settings.weeklyGoal, utcOffsetMin: -new Date().getTimezoneOffset(), now: Date.now() });
 
 function pushSettings() {
   if (account) saveRemoteSettings(syncable(settings)).catch((err) => console.warn('Settings sync failed', err));
@@ -158,6 +162,13 @@ function home() {
     renderHome(root, {
       settings,
       history,
+      progression: progressionOf(history),
+      onWeeklyGoal(goal) {
+        settings = { ...settings, weeklyGoal: Math.max(1, Math.min(7, goal)) };
+        saveSettings(settings);
+        pushSettings();
+        home();
+      },
       trainer: slot('trainer'),
       heartRate: slot('hr'),
       account: account && {
@@ -256,6 +267,7 @@ function summary(session: Session, recorder: FactsRecorder) {
   });
   // One ID for this ride everywhere: local history, the upload, and the synced copy.
   const rideId = crypto.randomUUID();
+  const before = progressionOf(history);
   if (s.seconds >= 60) {
     const { segments: _segments, ...rest } = s;
     const startedAt = new Date(s.startedAtMs ?? Date.now() - s.seconds * 1000).toISOString();
@@ -271,10 +283,19 @@ function summary(session: Session, recorder: FactsRecorder) {
   }
   // Built once so a retry re-sends the identical ride (same ID), which the API treats as idempotent.
   const pending = account && s.seconds >= 60 ? pendingRide(rideId, s, session.samples) : undefined;
+  const after = progressionOf(history);
+  const reveal = {
+    xp: after.rides.find((r) => r.id === rideId)?.xp,
+    simulated: lastRideSimulated,
+    before,
+    after,
+    newlyEarned: earnedBy(after.achievements, rideId),
+  };
   show('summary', (root) =>
     renderSummary(root, {
       session,
       upload: pending && (() => sendRide(pending)),
+      reveal,
       manualUpload: lastRideSimulated,
       lthr: settings.hr.lthr,
       onAcceptLthr(lthr) {

@@ -7,12 +7,15 @@ import { asset } from './asset';
 import { $, esc, html } from './dom';
 import type { StravaStatus } from '../api/uploads';
 import { drawHrStrip } from './hr-chart';
+import { animateXp, Reveal, xpReveal } from './progress';
 import { drawProfile } from './profile';
 
 export interface SummaryProps {
   session: Session;
   /** Present when signed in with Strava: uploads the ride and resolves with the outcome. */
   upload?: () => Promise<StravaStatus>;
+  /** XP, rank and patches earned by this ride. */
+  reveal?: Reveal;
   /** Simulated rides don't auto-upload (no fake activities on Strava); offer a button instead. */
   manualUpload?: boolean;
   lthr?: number;
@@ -92,7 +95,7 @@ function stravaLine(st: StravaStatus | 'uploading'): string {
 
 export function renderSummary(
   root: HTMLElement,
-  { session, lthr, onAcceptLthr, onDone, upload, manualUpload }: SummaryProps,
+  { session, lthr, onAcceptLthr, onDone, upload, manualUpload, reveal }: SummaryProps,
 ): () => void {
   const s = session.summary();
   const scored = s.segments.filter((x) => x.under + x.over + x.compliance > 0);
@@ -115,6 +118,8 @@ export function renderSummary(
         </div>
         ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}
       </section>
+
+      ${reveal ? xpReveal(reveal) : ''}
 
       <section class="kpis">
         <div class="hero-kpi"><span class="label">On target</span><span class="num">${pct(s.compliance)}</span></div>
@@ -178,6 +183,7 @@ export function renderSummary(
   draw();
   window.addEventListener('resize', draw);
   $(page, '[data-role=done]').addEventListener('click', onDone);
+  animateXp(page);
 
   const statusEl = page.querySelector<HTMLElement>('[data-role=strava-status]');
   let alive = true;
