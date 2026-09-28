@@ -2,6 +2,7 @@
 
 import { Achievement, ACHIEVEMENTS, Earned, tiersEarned } from '../core/achievements';
 import type { Progression, XpBreakdown } from '../core/progression';
+import { asset } from './asset';
 import { esc } from './dom';
 
 const TIER_NAMES: Record<number, string[]> = {
@@ -13,7 +14,7 @@ export const tierName = (a: Achievement, tier: number) => TIER_NAMES[a.tiers.len
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 
-/** A patch: art lands in step 4; until then a typographic roundel with a tier-coloured ring. */
+/** A patch: the embroidered art (name stitched in), with a progress ring while locked and a tier ring once earned. */
 export function patch(a: Achievement, tier: number, opts: { progress?: number; size?: 'lg' } = {}): string {
   const earned = tier >= 0;
   const tierCls = earned && a.tiers.length > 1 ? ` tier-${tier}` : '';
@@ -22,8 +23,8 @@ export function patch(a: Achievement, tier: number, opts: { progress?: number; s
   const title = earned ? `${a.name}${tierName(a, tier) ? ` · ${tierName(a, tier)}` : ''}` : `Locked: ${a.hint}`;
   return `
     <div class="patch-badge${earned ? ' earned' : ''}${tierCls}${opts.size === 'lg' ? ' lg' : ''}" title="${esc(title)}"
-         style="--p:${pct}">
-      <span class="patch-name${Math.max(...a.name.split(' ').map((w) => w.length)) > 11 ? ' long' : ''}">${esc(a.name)}</span>
+         role="img" aria-label="${esc(title)}" style="--p:${pct}">
+      <img src="${asset(`patches/${a.id}.jpg`)}" alt="" loading="lazy" decoding="async" />
     </div>`;
 }
 

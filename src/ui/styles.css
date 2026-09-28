@@ -363,62 +363,47 @@ button {
   flex-wrap: wrap;
   gap: 14px;
 }
-/* Placeholder patch: roundel with a progress / tier ring. */
+/* Patch: embroidered art in a ring. Locked = dark + progress ring; earned tiers get a metal ring. */
 .patch-badge {
-  --size: 84px;
-  --ring: var(--line-strong);
+  --size: 88px;
   width: var(--size);
   height: var(--size);
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  padding: 12px;
-  background:
-    radial-gradient(circle, var(--bg) 62%, transparent 63%),
-    conic-gradient(var(--text-3) calc(var(--p) * 360deg), var(--surface-2) 0);
-  color: var(--text-3);
+  padding: 4px;
+  background: conic-gradient(var(--text-3) calc(var(--p) * 360deg), var(--surface-2) 0);
   cursor: default;
 }
 .patch-badge.lg {
-  --size: 104px;
+  --size: 112px;
+}
+.patch-badge img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  filter: grayscale(1) brightness(0.32);
+  transition: filter 300ms;
+}
+.patch-badge:hover img {
+  filter: grayscale(1) brightness(0.55);
 }
 .patch-badge.earned {
-  background:
-    radial-gradient(circle, var(--surface) 62%, transparent 63%),
-    conic-gradient(var(--ring) 360deg, var(--ring) 0);
-  --ring: var(--text);
-  color: var(--text);
+  background: none;
+}
+.patch-badge.earned img {
+  filter: none;
 }
 .patch-badge.tier-0 {
-  --ring: #b08d57;
+  background: #b08d57;
 }
 .patch-badge.tier-1 {
-  --ring: #c9ccd1;
+  background: #c9ccd1;
 }
 .patch-badge.tier-2 {
-  --ring: #e8b84a;
+  background: #e8b84a;
 }
 .patch-badge.tier-3 {
-  --ring: #e5e4e2;
-}
-.patch-name {
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 12px;
-  line-height: 1.05;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.patch-badge.lg .patch-name {
-  font-size: 14px;
-}
-/* Names with a long word (e.g. TRANSFORMATION) shrink to stay inside the roundel. */
-.patch-name.long {
-  font-size: 9.5px;
-}
-.patch-badge.lg .patch-name.long {
-  font-size: 11.5px;
+  background: #e5e4e2;
 }
 
 /* Summary reveal */
