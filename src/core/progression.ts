@@ -12,6 +12,8 @@ export interface HistoryRide {
   tss: number;
   compliance: number;
   facts?: RideFacts;
+  /** For matching local and synced copies of rides saved before they shared an ID. */
+  workoutId?: string;
 }
 
 export interface Rank {

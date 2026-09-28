@@ -62,6 +62,7 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/me", a.csrf(a.authed(a.deleteMe)))
 	mux.HandleFunc("POST /api/rides", a.csrf(a.authed(a.postRide)))
 	mux.HandleFunc("GET /api/rides", a.authed(a.listRides))
+	mux.HandleFunc("POST /api/rides/import", a.csrf(a.authed(a.importRides)))
 	return mux
 }
 

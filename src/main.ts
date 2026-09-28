@@ -1,6 +1,9 @@
 import './ui/styles.css';
 import { Account, completeStravaSignIn, loadAccount, saveRemoteSettings, signOut, startStravaSignIn } from './api/account';
+import { syncHistory } from './api/history';
 import { flushQueue, pendingRide, sendRide } from './api/uploads';
+import { toHistoryRide } from './core/history';
+import type { HistoryRide } from './core/progression';
 import { computeFacts, FactsRecorder } from './core/facts';
 import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
@@ -12,7 +15,7 @@ import { SimulatedTrainer } from './devices/simulated';
 import type { Trainer } from './devices/trainer';
 import { DeviceSlot, renderHome } from './ui/home';
 import { renderRide } from './ui/ride';
-import { appendHistory, loadSettings, saveSettings, Settings } from './ui/storage';
+import { appendHistory, loadHistory, loadSettings, saveSettings, Settings } from './ui/storage';
 import { renderSummary } from './ui/summary';
 
 type Kind = 'trainer' | 'hr';
@@ -29,6 +32,18 @@ let accountNote: string | undefined;
 let ftpOfferDismissed = false;
 /** Whether the ride that just finished used the simulated rider. */
 let lastRideSimulated = true;
+/** Local rides until signed in; then local merged with the account's synced rides. */
+let history: HistoryRide[] = loadHistory().map(toHistoryRide);
+
+async function refreshHistory() {
+  if (!account) return;
+  try {
+    history = await syncHistory(loadHistory());
+    refreshHome();
+  } catch (err) {
+    console.warn('History sync failed', err);
+  }
+}
 let teardown: (() => void) | undefined;
 
 function show(name: typeof screen, render: (root: HTMLElement) => () => void) {
@@ -133,6 +148,7 @@ async function boot() {
   }
   refreshHome();
   if (account?.canUpload) void flushQueue();
+  void refreshHistory();
   void autoConnect();
 }
 
@@ -141,6 +157,7 @@ function home() {
   show('home', (root) =>
     renderHome(root, {
       settings,
+      history,
       trainer: slot('trainer'),
       heartRate: slot('hr'),
       account: account && {
@@ -153,6 +170,7 @@ function home() {
       async onSignOut() {
         await signOut().catch(() => undefined);
         account = undefined;
+        history = loadHistory().map(toHistoryRide);
         home();
       },
       onUseStravaFtp(ftp) {
@@ -236,10 +254,14 @@ function summary(session: Session, recorder: FactsRecorder) {
     lthr: settings.hr.lthr,
     startHourLocal: new Date(s.startedAtMs ?? Date.now()).getHours(),
   });
+  // One ID for this ride everywhere: local history, the upload, and the synced copy.
+  const rideId = crypto.randomUUID();
   if (s.seconds >= 60) {
     const { segments: _segments, ...rest } = s;
     const startedAt = new Date(s.startedAtMs ?? Date.now() - s.seconds * 1000).toISOString();
-    appendHistory({ id: crypto.randomUUID(), startedAt, summary: rest });
+    const record = { id: rideId, startedAt, summary: rest };
+    appendHistory(record);
+    history = [...history, toHistoryRide(record)];
   }
   const maxHr = sustainedMaxHr(session.samples);
   // Only real HR counts toward max seen, not the simulator's.
@@ -248,7 +270,7 @@ function summary(session: Session, recorder: FactsRecorder) {
     saveSettings(settings);
   }
   // Built once so a retry re-sends the identical ride (same ID), which the API treats as idempotent.
-  const pending = account && s.seconds >= 60 ? pendingRide(s, session.samples) : undefined;
+  const pending = account && s.seconds >= 60 ? pendingRide(rideId, s, session.samples) : undefined;
   show('summary', (root) =>
     renderSummary(root, {
       session,

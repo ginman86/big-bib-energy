@@ -32,12 +32,12 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /** Builds the upload payload once, so retries send the identical ride (same ID → idempotent). */
-export function pendingRide(summary: RideSummary, samples: Sample[]): PendingRide {
+export function pendingRide(id: string, summary: RideSummary, samples: Sample[]): PendingRide {
   const startedAtMs = summary.startedAtMs ?? Date.now() - summary.seconds * 1000;
   const fit = encodeFitActivity({ startedAtMs, utcOffsetS: -new Date(startedAtMs).getTimezoneOffset() * 60, summary, samples });
   const { segments: _segments, ...rest } = summary;
   return {
-    id: crypto.randomUUID(),
+    id,
     startedAt: new Date(startedAtMs).toISOString(),
     name: rideTitle(summary),
     description: rideDescription(summary),

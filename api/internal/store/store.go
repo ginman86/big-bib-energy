@@ -40,6 +40,8 @@ type Ride struct {
 
 type Store interface {
 	PutRide(ctx context.Context, r *Ride) error
+	// PutRideIfAbsent writes the ride only if it doesn't exist; reports whether it was written.
+	PutRideIfAbsent(ctx context.Context, r *Ride) (bool, error)
 	// GetRide returns nil, nil when not found.
 	GetRide(ctx context.Context, athleteID int64, startedAt time.Time, id string) (*Ride, error)
 	// ListRides returns rides started at or after since, oldest first.

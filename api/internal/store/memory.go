@@ -96,6 +96,20 @@ func (m *Memory) PutRide(_ context.Context, r *Ride) error {
 	return nil
 }
 
+func (m *Memory) PutRideIfAbsent(_ context.Context, r *Ride) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.rides == nil {
+		m.rides = map[string]Ride{}
+	}
+	k := rideKey(r.AthleteID, r.StartedAt, r.ID)
+	if _, ok := m.rides[k]; ok {
+		return false, nil
+	}
+	m.rides[k] = *r
+	return true, nil
+}
+
 func (m *Memory) GetRide(_ context.Context, athleteID int64, startedAt time.Time, id string) (*Ride, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

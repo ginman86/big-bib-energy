@@ -130,3 +130,33 @@ func TestRideValidation(t *testing.T) {
 		t.Errorf("bad fit: %d", code)
 	}
 }
+
+func TestImportHistoryIsIdempotentAndNeverUploads(t *testing.T) {
+	h, fake, _ := rideHarness(t, "ok", "read,activity:write")
+	body := `{"rides":[
+		{"id":"11111111-1111-4111-8111-111111111111","startedAt":"2026-09-20T06:00:00Z","name":"Shakeout","summary":{"tss":8}},
+		{"id":"22222222-2222-4222-8222-222222222222","startedAt":"2026-09-21T06:00:00Z","name":"Sweet Spot 3×10","summary":{"tss":60}}]}`
+	rec := h.do("POST", "/api/rides/import", body, ok)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"imported":2`) {
+		t.Fatalf("import %d %s", rec.Code, rec.Body)
+	}
+	if rec := h.do("POST", "/api/rides/import", body, ok); !strings.Contains(rec.Body.String(), `"imported":0`) {
+		t.Errorf("re-import should skip existing: %s", rec.Body)
+	}
+	if fake.uploads.Load() != 0 {
+		t.Error("imported history must never go to Strava")
+	}
+	list := h.do("GET", "/api/rides", "", nil).Body.String()
+	if !strings.Contains(list, "Shakeout") || !strings.Contains(list, `"tss":60`) {
+		t.Errorf("list %s", list)
+	}
+	// An uploaded ride isn't overwritten by an import of the same ID.
+	postRide(t, h, rideBody(rideUUID))
+	h.do("POST", "/api/rides/import", `{"rides":[{"id":"`+rideUUID+`","startedAt":"2026-09-28T06:30:00Z","name":"x","summary":{}}]}`, ok)
+	if !strings.Contains(h.do("GET", "/api/rides", "", nil).Body.String(), `"stravaActivityId":555`) {
+		t.Error("import clobbered an uploaded ride")
+	}
+	if rec := h.do("POST", "/api/rides/import", `{"rides":[{"id":"nope","startedAt":"2026-09-20T06:00:00Z","summary":{}}]}`, ok); rec.Code != 400 {
+		t.Errorf("bad id %d", rec.Code)
+	}
+}

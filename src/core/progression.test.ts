@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { earnedBy, tiersEarned } from './achievements';
 import { computeFacts, FactsRecorder, RideFacts } from './facts';
+import { mergeHistory, monthTotals } from './history';
 import { HistoryRide, progression, rankFor, weekIndex, xpForRide } from './progression';
 import { Session } from './session';
 import { minutes, repeat, steady, Workout } from './workout';
@@ -188,5 +189,28 @@ describe('ride facts', () => {
     s.skip();
     while (s.status === 'running') s.advance(1, { power: 150 });
     expect(s.completed).toBe(false);
+  });
+});
+
+describe('history merge', () => {
+  const r = (id: string, startedAt: number, workoutId = 'sweet-spot'): HistoryRide => ({ id, startedAt, seconds: 3600, tss: 60, compliance: 0.9, workoutId });
+
+  it('unions by ID, synced copies win, local-only rides are reported for import', () => {
+    const remote = [r('a', MON), r('b', MON + DAY)];
+    const local = [{ ...r('b', MON + DAY), tss: 1 }, r('c', MON + 2 * DAY)];
+    const m = mergeHistory(remote, local);
+    expect(m.rides.map((x) => x.id)).toEqual(['a', 'b', 'c']);
+    expect(m.rides[1].tss).toBe(60);
+    expect(m.localOnly.map((x) => x.id)).toEqual(['c']);
+  });
+
+  it('matches old rides whose local and synced IDs differ (same workout, start within 90 s)', () => {
+    const m = mergeHistory([r('server', MON)], [r('local', MON + 30_000), r('other-workout', MON + 30_000, 'vo2')]);
+    expect(m.rides.map((x) => x.id)).toEqual(['server', 'other-workout']);
+  });
+
+  it('month totals', () => {
+    const t = monthTotals([r('old', Date.UTC(2026, 7, 31, 12)), r('a', MON), r('b', MON + DAY)], new Date(MON + 2 * DAY));
+    expect(t).toMatchObject({ rides: 2, seconds: 7200, avgCompliance: 0.9 });
   });
 });

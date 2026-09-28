@@ -194,3 +194,48 @@ func truncate(s string, n int) string {
 	}
 	return s
 }
+
+const (
+	maxImportRides   = 500
+	maxImportSummary = 8 << 10
+)
+
+type importRequest struct {
+	Rides []struct {
+		ID        string          `json:"id"`
+		StartedAt time.Time       `json:"startedAt"`
+		Name      string          `json:"name"`
+		Summary   json.RawMessage `json:"summary"`
+	} `json:"rides"`
+}
+
+// importRides adds ride history recorded before signing in (no .fit, never sent to Strava).
+// Idempotent: rides that already exist are left alone.
+func (a *App) importRides(w http.ResponseWriter, r *http.Request, s athleteCtx) {
+	var req importRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportRides*(maxImportSummary+512))
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Rides) > maxImportRides {
+		writeError(w, http.StatusBadRequest, "invalid import")
+		return
+	}
+	now := a.now()
+	imported := 0
+	for _, in := range req.Rides {
+		if !rideID.MatchString(in.ID) || in.StartedAt.IsZero() || len(in.Summary) > maxImportSummary || !json.Valid(in.Summary) {
+			writeError(w, http.StatusBadRequest, "invalid ride "+in.ID)
+			return
+		}
+		created, err := a.store.PutRideIfAbsent(r.Context(), &store.Ride{
+			AthleteID: s.athlete.ID, ID: in.ID, StartedAt: in.StartedAt, Name: truncate(in.Name, 200),
+			Summary: store.JSONText(in.Summary), CreatedAt: now, UpdatedAt: now,
+		})
+		if err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		if created {
+			imported++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"imported": imported})
+}

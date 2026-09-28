@@ -1,7 +1,8 @@
 import { hoursMinutes, pct } from '../core/format';
-import { since, startOfMonth, totals } from '../core/history';
+import { monthTotals } from '../core/history';
 import { LthrSource, lthrFromMaxHr, maxHrFromAge } from '../core/hr';
 import { normalizedPower, trainingStress } from '../core/metrics';
+import type { HistoryRide } from '../core/progression';
 import { expand, peakFraction, targetAt, totalDuration, Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
 import { bluetoothAvailable } from '../devices/bluetooth-trainer';
@@ -28,7 +29,7 @@ function accountArea(p: HomeProps): string {
     </div>`;
 }
 import { drawProfile } from './profile';
-import { loadHistory, Settings } from './storage';
+import type { Settings } from './storage';
 
 /** What the home screen knows about one device (trainer or HR strap). */
 export interface DeviceSlot {
@@ -41,6 +42,8 @@ export interface DeviceSlot {
 
 export interface HomeProps {
   settings: Settings;
+  /** Merged local + synced rides, oldest first. */
+  history: HistoryRide[];
   account?: { name: string; canUpload: boolean };
   accountNote?: string;
   /** Strava's FTP, when it differs from ours. */
@@ -100,7 +103,7 @@ function lthrNote(source?: LthrSource, maxSeen?: number): string {
 
 export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   const { settings } = props;
-  const month = totals(since(loadHistory(), startOfMonth(new Date())));
+  const month = monthTotals(props.history, new Date());
   const hasBt = bluetoothAvailable();
 
   const page = html(`

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -142,6 +143,24 @@ func (d *Dynamo) PutRide(ctx context.Context, r *Ride) error {
 	}
 	_, err = d.DB.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.Table, Item: item})
 	return err
+}
+
+func (d *Dynamo) PutRideIfAbsent(ctx context.Context, r *Ride) (bool, error) {
+	item, err := attributevalue.MarshalMap(r)
+	if err != nil {
+		return false, err
+	}
+	for k, v := range key(athleteKey(r.AthleteID), rideSK(r.StartedAt, r.ID)) {
+		item[k] = v
+	}
+	_, err = d.DB.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: &d.Table, Item: item, ConditionExpression: aws.String("attribute_not_exists(pk)"),
+	})
+	var exists *types.ConditionalCheckFailedException
+	if errors.As(err, &exists) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (d *Dynamo) GetRide(ctx context.Context, athleteID int64, startedAt time.Time, id string) (*Ride, error) {
