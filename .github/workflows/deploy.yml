@@ -19,6 +19,7 @@ jobs:
     env:
       AWS_REGION: us-east-1
       TF_VAR_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_VAR_strava_client_id: ${{ vars.STRAVA_CLIENT_ID }}
       TF_IN_AUTOMATION: '1'
     steps:
       - uses: actions/checkout@v7
@@ -30,6 +31,19 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+        env:
+          VITE_STRAVA_CLIENT_ID: ${{ vars.STRAVA_CLIENT_ID }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+      - name: Test and build API
+        working-directory: api
+        run: |
+          go vet ./...
+          go test ./...
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -trimpath -ldflags="-s -w" -o dist/bootstrap ./cmd/lambda
 
       - uses: aws-actions/configure-aws-credentials@v6
         with:

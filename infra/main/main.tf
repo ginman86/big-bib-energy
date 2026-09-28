@@ -1,5 +1,5 @@
-# Big Bib Energy on AWS: the site (CloudFront + private S3) on https://bigbib.ginman.dev.
-# The API (Lambda behind /api/*) is added in a later milestone.
+# Big Bib Energy on AWS: the site (CloudFront + private S3) on https://bigbib.ginman.dev,
+# with the API (api.tf) behind /api/* on the same origin.
 
 provider "aws" {
   # us-east-1 is required anyway for CloudFront's ACM certificate.
@@ -135,6 +135,15 @@ data "aws_cloudfront_cache_policy" "optimized" {
   name = "Managed-CachingOptimized"
 }
 
+data "aws_cloudfront_cache_policy" "disabled" {
+  name = "Managed-CachingDisabled"
+}
+
+# Forwards cookies, query strings and headers, but not Host: the Lambda URL must see its own.
+data "aws_cloudfront_origin_request_policy" "all_but_host" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   comment             = "${var.project} site"
@@ -148,6 +157,31 @@ resource "aws_cloudfront_distribution" "site" {
     origin_id                = "site"
     domain_name              = aws_s3_bucket.site.bucket_regional_domain_name
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
+  }
+
+  origin {
+    origin_id                = "api"
+    domain_name              = trimsuffix(trimprefix(aws_lambda_function_url.api.function_url, "https://"), "/")
+    origin_access_control_id = aws_cloudfront_origin_access_control.api.id
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern               = "/api/*"
+    target_origin_id           = "api"
+    viewer_protocol_policy     = "https-only"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_but_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.site.id
   }
 
   default_cache_behavior {
