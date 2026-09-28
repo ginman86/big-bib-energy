@@ -3,6 +3,7 @@
 
 import { accumulate, avgPower, Band, classify, combine, compliance, DEFAULT_TOLERANCE, emptyStats, SegmentStats, Tolerance } from './compliance';
 import { intensityFactor, mean, normalizedPower, trainingStress } from './metrics';
+import type { RideFacts } from './facts';
 import { expand, Segment, segmentAt, targetAt, totalDuration, Workout } from './workout';
 
 export interface Reading {
@@ -52,6 +53,8 @@ export interface SegmentSummary {
 
 export interface RideSummary {
   workoutId: string;
+  /** Recorded at the end of the ride for XP and achievements (see core/facts). */
+  facts?: RideFacts;
   /** Wall-clock time the ride first started (ms since Unix epoch), if known. */
   startedAtMs?: number;
   workoutName: string;
@@ -80,6 +83,8 @@ export class Session {
   readonly stats: SegmentStats[];
   status: Status = 'ready';
   startedAtMs?: number;
+  /** Workout time jumped over with skip(). */
+  skippedSeconds = 0;
   elapsed = 0;
 
   private window: { t: number; power: number }[] = [];
@@ -112,6 +117,11 @@ export class Session {
     this.status = 'finished';
   }
 
+  /** Reached the end of the workout without skipping more than 5% of it (not ended early). */
+  get completed(): boolean {
+    return this.elapsed >= this.duration - 0.5 && this.skippedSeconds <= this.duration * 0.05;
+  }
+
   targetWatts(t = this.elapsed): number {
     const f = targetAt(this.segments, Math.min(t, this.duration - 1e-6));
     return f === null ? 0 : Math.round(f * this.ftp);
@@ -121,6 +131,7 @@ export class Session {
   skip() {
     const seg = segmentAt(this.segments, this.elapsed);
     if (!seg) return;
+    this.skippedSeconds += seg.end - this.elapsed;
     this.elapsed = seg.end;
     this.nextSampleAt = Math.ceil(this.elapsed);
     this.window = [];

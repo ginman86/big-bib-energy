@@ -1,6 +1,7 @@
 import { LevelFilter, powerLevel } from '../core/avatar';
 import { bandHalfWidth } from '../core/compliance';
 import { ErgGovernor, ErgState } from '../core/erg';
+import { FactsRecorder } from '../core/facts';
 import { hrZoneFor } from '../core/hr';
 import { leadTarget, StepResponse } from '../core/latency';
 import { clock, pct } from '../core/format';
@@ -26,7 +27,7 @@ export interface RideProps {
   /** Enables HR zones on the HR strip. */
   lthr?: number;
   onModeChange(mode: ControlMode): void;
-  onFinish(session: Session): void;
+  onFinish(session: Session, facts: FactsRecorder): void;
   onQuit(): void;
 }
 
@@ -291,6 +292,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   let lastHud = 0;
   let shownPower = 0;
   const steps = new StepResponse();
+  const recorder = new FactsRecorder();
   const hud = $(page, '.hud');
   let finished = false;
 
@@ -339,7 +341,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     if (session.status === 'finished') {
       if (!finished) {
         finished = true;
-        props.onFinish(session);
+        props.onFinish(session, recorder);
       }
       return;
     }
@@ -375,7 +377,17 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     docEl.dataset.band = live && !s.settling ? s.band : '';
     docEl.dataset.settling = String(s.settling);
     // Stay calm until the ride is actually rolling.
-    avatar?.set(levels.update(live ? powerLevel(zoneFor(s.powerW / ftp)) : 1, now));
+    const level = levels.update(live ? powerLevel(zoneFor(s.powerW / ftp)) : 1, now);
+    avatar?.set(level);
+    recorder.frame({
+      dt: realDt * speed,
+      running: live,
+      paused: session.status === 'paused',
+      mode,
+      avatarLevel: level,
+      erg: ergState,
+      reconnecting: trainer.connection === 'reconnecting',
+    });
 
     setText(fields.elapsed, clock(s.elapsed));
     // Glide toward the new value instead of snapping; ~0.2 s, far below the 3 s smoothing.

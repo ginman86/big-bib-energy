@@ -1,6 +1,7 @@
 import './ui/styles.css';
 import { Account, completeStravaSignIn, loadAccount, saveRemoteSettings, signOut, startStravaSignIn } from './api/account';
 import { flushQueue, pendingRide, sendRide } from './api/uploads';
+import { computeFacts, FactsRecorder } from './core/facts';
 import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
 import type { Workout } from './core/workout';
@@ -224,8 +225,17 @@ function ride(workout: Workout) {
   );
 }
 
-function summary(session: Session) {
+function summary(session: Session, recorder: FactsRecorder) {
   const s = session.summary();
+  s.facts = computeFacts({
+    summary: s,
+    samples: session.samples,
+    recorder,
+    completed: session.completed,
+    simulated: lastRideSimulated,
+    lthr: settings.hr.lthr,
+    startHourLocal: new Date(s.startedAtMs ?? Date.now()).getHours(),
+  });
   if (s.seconds >= 60) {
     const { segments: _segments, ...rest } = s;
     const startedAt = new Date(s.startedAtMs ?? Date.now() - s.seconds * 1000).toISOString();
