@@ -3,7 +3,7 @@ import { LevelFilter, powerLevel } from './avatar';
 import { classify } from './compliance';
 import { ErgGovernor } from './erg';
 import { hrZoneFor, lthrFromMaxHr, maxHrFromAge, suggestLthr, sustainedMaxHr, timeInHrZones } from './hr';
-import { leadTarget, RateMeter, StepResponse } from './latency';
+import { leadTarget, RateMeter, reconnectDelayMs, StepResponse } from './latency';
 import { CrankCadence, parseCyclingPower, wahooErg, wahooGrade, wahooSimMode, wahooUnlock } from './cps';
 import { parseHeartRate, parseIndoorBikeData, setSimulation, setTargetPower } from './ftms';
 import { normalizedPower, trainingStress } from './metrics';
@@ -349,5 +349,11 @@ describe('stopping pedalling', () => {
     g.update({ ...base, nowMs: 20_000, cadence: 90 });
     expect(g.update({ ...base, nowMs: 20_100, cadence: 0 }).kind).toBe('erg');
     expect(g.update({ ...base, nowMs: 21_100, cadence: 0 })).toEqual({ kind: 'free' });
+  });
+});
+
+describe('reconnect backoff', () => {
+  it('retries quickly, then backs off to a cap', () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map(reconnectDelayMs)).toEqual([250, 1000, 2000, 4000, 8000, 8000, 8000]);
   });
 });

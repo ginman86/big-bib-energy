@@ -2,32 +2,102 @@ import './ui/styles.css';
 import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
 import type { Workout } from './core/workout';
-import { BluetoothTrainer, connectTrainer } from './devices/bluetooth-trainer';
-import { HeartRateMonitor } from './devices/heart-rate';
+import { bluetoothAvailable, BluetoothTrainer, openTrainer, pickTrainer } from './devices/bluetooth-trainer';
+import { openWhenInRange, rememberedDevice } from './devices/gatt-link';
+import { HeartRateMonitor, openHeartRate, pickHeartRate } from './devices/heart-rate';
 import { SimulatedTrainer } from './devices/simulated';
 import type { Trainer } from './devices/trainer';
-import { renderHome } from './ui/home';
+import { DeviceSlot, renderHome } from './ui/home';
 import { renderRide } from './ui/ride';
 import { appendHistory, loadSettings, saveSettings, Settings } from './ui/storage';
 import { renderSummary } from './ui/summary';
+
+type Kind = 'trainer' | 'hr';
 
 const app = document.getElementById('app')!;
 let settings = loadSettings();
 let realTrainer: BluetoothTrainer | undefined;
 let heartRate: HeartRateMonitor | undefined;
+const searching: Record<Kind, boolean> = { trainer: false, hr: false };
+let screen: 'home' | 'ride' | 'summary' = 'home';
 let teardown: (() => void) | undefined;
 
-function show(render: (root: HTMLElement) => () => void) {
+function show(name: typeof screen, render: (root: HTMLElement) => () => void) {
   teardown?.();
   app.replaceChildren();
+  screen = name;
   teardown = render(app);
 }
 
+/** Device state changed in the background: redraw home if that's what's showing. */
+const refreshHome = () => screen === 'home' && home();
+
+function remember(kind: Kind, device: { id: string; name: string }) {
+  settings = { ...settings, devices: { ...settings.devices, [kind]: { id: device.id, name: device.name } } };
+  saveSettings(settings);
+}
+
+function adoptTrainer(t: BluetoothTrainer) {
+  if (realTrainer && realTrainer !== t) void realTrainer.disconnect();
+  realTrainer = t;
+  t.link.onStatus = refreshHome;
+  remember('trainer', t);
+}
+
+function adoptHeartRate(m: HeartRateMonitor) {
+  if (heartRate && heartRate !== m) void heartRate.disconnect();
+  heartRate = m;
+  m.link.onStatus = refreshHome;
+  remember('hr', m);
+}
+
+function slot(kind: Kind): DeviceSlot {
+  const saved = settings.devices[kind]?.name;
+  if (kind === 'trainer' && realTrainer) {
+    const t = realTrainer;
+    const detail = `${t.protocol}${t.controllable ? '' : ' (Target mode only)'}`;
+    return { connected: { name: t.name, detail, reconnecting: t.connection === 'reconnecting' }, searching: false };
+  }
+  if (kind === 'hr' && heartRate) {
+    return { connected: { name: heartRate.name, reconnecting: heartRate.connection === 'reconnecting' }, searching: false };
+  }
+  return { remembered: saved, searching: searching[kind] };
+}
+
+/**
+ * Reconnect last session's devices without a prompt. Needs the browser to expose previously
+ * permitted devices (getDevices(), behind Chrome flags today); silently does nothing otherwise.
+ */
+async function autoConnect() {
+  if (!bluetoothAvailable()) return;
+  const open = { trainer: openTrainer, hr: openHeartRate } as const;
+  await Promise.all(
+    (['trainer', 'hr'] as const).map(async (kind) => {
+      const saved = settings.devices[kind];
+      const device = saved && (await rememberedDevice(saved.id).catch(() => undefined));
+      if (!device) return;
+      searching[kind] = true;
+      refreshHome();
+      try {
+        const d = await openWhenInRange<BluetoothTrainer | HeartRateMonitor>(device, open[kind]);
+        if (d instanceof HeartRateMonitor) adoptHeartRate(d);
+        else adoptTrainer(d);
+      } catch (err) {
+        console.warn(`Auto-connect to ${saved.name} failed`, err);
+      } finally {
+        searching[kind] = false;
+        refreshHome();
+      }
+    }),
+  );
+}
+
 function home() {
-  show((root) =>
+  show('home', (root) =>
     renderHome(root, {
       settings,
-      trainer: realTrainer,
+      trainer: slot('trainer'),
+      heartRate: slot('hr'),
       onSettings(next: Settings) {
         settings = next;
         saveSettings(settings);
@@ -35,11 +105,7 @@ function home() {
       },
       async onConnect() {
         try {
-          const t = await connectTrainer();
-          t.onDisconnect = () => {
-            realTrainer = undefined;
-          };
-          realTrainer = t;
+          adoptTrainer(await pickTrainer());
         } catch (err) {
           // User cancelled the chooser, or the connection failed.
           console.warn('Trainer connection failed', err);
@@ -51,15 +117,9 @@ function home() {
         realTrainer = undefined;
         home();
       },
-      heartRate,
       async onConnectHr() {
-        const m = new HeartRateMonitor();
         try {
-          await m.connect();
-          m.onDisconnect = () => {
-            heartRate = undefined;
-          };
-          heartRate = m;
+          adoptHeartRate(await pickHeartRate());
         } catch (err) {
           console.warn('Heart rate connection failed', err);
         }
@@ -77,7 +137,7 @@ function home() {
 
 function ride(workout: Workout) {
   const trainer: Trainer = realTrainer ?? new SimulatedTrainer(settings.ftp);
-  show((root) =>
+  show('ride', (root) =>
     renderRide(root, {
       workout,
       ftp: settings.ftp,
@@ -108,7 +168,7 @@ function summary(session: Session) {
     settings = { ...settings, hr: { ...settings.hr, maxSeen: maxHr } };
     saveSettings(settings);
   }
-  show((root) =>
+  show('summary', (root) =>
     renderSummary(root, {
       session,
       lthr: settings.hr.lthr,
@@ -122,3 +182,4 @@ function summary(session: Session) {
 }
 
 home();
+void autoConnect();

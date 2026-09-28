@@ -1,24 +1,44 @@
 // Standalone Bluetooth heart-rate monitor (chest strap, or a watch broadcasting HR).
 
 import { HEART_RATE_MEASUREMENT, HEART_RATE_SERVICE, parseHeartRate } from '../core/ftms';
+import { GattLink, LinkStatus } from './gatt-link';
 
 /** Straps notify ~1 Hz; treat silence beyond this as "no reading" rather than showing a frozen number. */
 const STALE_MS = 5000;
 
 export class HeartRateMonitor {
-  name = 'Heart rate';
-  onDisconnect?: () => void;
+  readonly name: string;
+  readonly link: GattLink;
 
-  private device?: BluetoothDevice;
   private bpm?: number;
   private at = 0;
 
-  async connect() {
-    this.device = await navigator.bluetooth.requestDevice({ filters: [{ services: [HEART_RATE_SERVICE] }] });
-    this.name = this.device.name ?? this.name;
-    this.device.addEventListener('gattserverdisconnected', () => this.onDisconnect?.());
+  constructor(readonly device: BluetoothDevice) {
+    this.name = device.name ?? 'Heart rate';
+    this.link = new GattLink(device, (server) => this.setup(server));
+  }
 
-    const server = await this.device.gatt!.connect();
+  get id() {
+    return this.device.id;
+  }
+
+  get connection(): LinkStatus {
+    return this.link.status;
+  }
+
+  async connect() {
+    await this.link.connect();
+  }
+
+  async disconnect() {
+    this.link.close();
+  }
+
+  latest(): number | undefined {
+    return performance.now() - this.at < STALE_MS ? this.bpm : undefined;
+  }
+
+  private async setup(server: BluetoothRemoteGATTServer) {
     const hr = await (await server.getPrimaryService(HEART_RATE_SERVICE)).getCharacteristic(HEART_RATE_MEASUREMENT);
     hr.addEventListener('characteristicvaluechanged', (e) => {
       const bpm = parseHeartRate((e.target as BluetoothRemoteGATTCharacteristic).value!);
@@ -28,12 +48,15 @@ export class HeartRateMonitor {
     });
     await hr.startNotifications();
   }
+}
 
-  async disconnect() {
-    this.device?.gatt?.disconnect();
-  }
+export async function openHeartRate(device: BluetoothDevice): Promise<HeartRateMonitor> {
+  const m = new HeartRateMonitor(device);
+  await m.connect();
+  return m;
+}
 
-  latest(): number | undefined {
-    return performance.now() - this.at < STALE_MS ? this.bpm : undefined;
-  }
+export async function pickHeartRate(): Promise<HeartRateMonitor> {
+  const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [HEART_RATE_SERVICE] }] });
+  return openHeartRate(device);
 }

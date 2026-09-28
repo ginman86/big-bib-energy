@@ -27,6 +27,13 @@ One "Connect trainer" button; the app picks the best protocol the device offers:
 | Older Wahoo KICKR / KICKR Core firmware | Wahoo control over Cycling Power | ERG + Target |
 | Any Bluetooth power meter (pedals, cranks, bike) | Cycling Power, read-only | Target only |
 
+**Connections.** If a trainer or HR strap drops, the app reconnects on its own (backoff up to 8 s);
+mid-ride it pauses with a "Reconnecting" screen and replays the last ERG target or grade once the
+trainer is back. The last-used devices are remembered: the button becomes "Reconnect Suito", and in
+browsers exposing previously permitted devices it auto-connects on page load. In Chrome that needs
+`chrome://flags/#enable-web-bluetooth-new-permissions-backend` and
+`chrome://flags/#enable-experimental-web-platform-features` today; without them it's one click.
+
 The Wahoo protocol is undocumented; encodings follow GoldenCheetah and Auuki. Protocol selection
 and command bytes were verified against a scripted fake device, not yet real KICKR hardware.
 
@@ -89,7 +96,8 @@ src/core/      Pure logic, no DOM (type-checked with tsconfig.core.json). Portab
   ftms.ts        Bluetooth FTMS / Heart Rate byte encode/decode
   cps.ts         Cycling Power decode, crank cadence, Wahoo control encoders
   history.ts     Ride records and rollups
-src/devices/   Trainer interface, simulated rider, Bluetooth trainers (FTMS / Wahoo / power meter), HR strap
+src/devices/   Trainer interface, simulated rider, Bluetooth trainers (FTMS / Wahoo / power meter), HR strap,
+               GattLink (auto-reconnect, remembered devices)
 src/ui/        Home, ride, and summary screens; canvas profile renderer
 src/workouts/  Built-in workout library
 ```

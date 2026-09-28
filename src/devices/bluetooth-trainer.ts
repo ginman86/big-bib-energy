@@ -31,6 +31,7 @@ import {
 } from '../core/ftms';
 import { RateMeter } from '../core/latency';
 import type { Reading } from '../core/session';
+import { GattLink, LinkStatus } from './gatt-link';
 import type { Trainer } from './trainer';
 
 /** A trainer silent for this long isn't being pedalled (some stop notifying when idle). */
@@ -46,37 +47,59 @@ async function subscribe(char: BluetoothRemoteGATTCharacteristic, onValue: (v: D
   await char.startNotifications();
 }
 
+type Control = { kind: 'erg'; watts: number } | { kind: 'grade'; pct: number };
+
 export abstract class BluetoothTrainer implements Trainer {
   readonly simulated = false;
   abstract readonly protocol: string;
   abstract readonly controllable: boolean;
   readonly name: string;
-  onDisconnect?: () => void;
+  readonly link: GattLink;
 
   protected reading: Reading = { power: 0 };
   private readonly rate = new RateMeter();
   private control?: BluetoothRemoteGATTCharacteristic;
   /** Control writes must not overlap (KICKRs drop them); chain them. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Replayed after a reconnect: the trainer forgets its ERG target / grade when the link drops. */
+  private lastControl?: Control;
 
-  constructor(
-    protected readonly device: BluetoothDevice,
-    protected readonly server: BluetoothRemoteGATTServer,
-  ) {
+  constructor(readonly device: BluetoothDevice) {
     this.name = device.name ?? 'Smart trainer';
-    device.addEventListener('gattserverdisconnected', () => this.onDisconnect?.());
+    this.link = new GattLink(device, (server) => this.setup(server));
   }
 
-  abstract init(): Promise<void>;
-  abstract setTargetPower(watts: number): Promise<void>;
-  abstract setGrade(gradePct: number): Promise<void>;
+  get id() {
+    return this.device.id;
+  }
+
+  get connection(): LinkStatus {
+    return this.link.status;
+  }
+
+  /** Subscribe to data and take control on a fresh GATT server. Runs on every (re)connect. */
+  protected abstract init(server: BluetoothRemoteGATTServer): Promise<void>;
+  protected abstract sendErg(watts: number): Promise<void>;
+  protected abstract sendGrade(gradePct: number): Promise<void>;
+  /** Forget per-connection command dedupe state. */
+  protected abstract resetControlCache(): void;
 
   async connect() {
-    // Connection happens in connectTrainer(); kept for the Trainer interface.
+    await this.link.connect();
   }
 
   async disconnect() {
-    this.device.gatt?.disconnect();
+    this.link.close();
+  }
+
+  async setTargetPower(watts: number) {
+    this.lastControl = { kind: 'erg', watts };
+    await this.sendErg(watts);
+  }
+
+  async setGrade(gradePct: number) {
+    this.lastControl = { kind: 'grade', pct: gradePct };
+    await this.sendGrade(gradePct);
   }
 
   latest(): Reading {
@@ -95,16 +118,6 @@ export abstract class BluetoothTrainer implements Trainer {
     this.rate.mark(performance.now());
   }
 
-  /** Some trainers relay a paired HR strap; use it if present. */
-  async attachHeartRate() {
-    try {
-      const hr = await (await this.server.getPrimaryService(HEART_RATE_SERVICE)).getCharacteristic(HEART_RATE_MEASUREMENT);
-      await subscribe(hr, (v) => (this.reading = { ...this.reading, heartRate: parseHeartRate(v) }));
-    } catch {
-      // No HR on this device.
-    }
-  }
-
   protected setControl(char: BluetoothRemoteGATTCharacteristic) {
     this.control = char;
   }
@@ -117,6 +130,27 @@ export abstract class BluetoothTrainer implements Trainer {
       .catch((err) => console.warn(`${this.protocol} write failed`, err));
     return this.queue;
   }
+
+  private async setup(server: BluetoothRemoteGATTServer) {
+    this.control = undefined;
+    this.queue = Promise.resolve();
+    this.resetControlCache();
+    await this.init(server);
+    await this.attachHeartRate(server);
+    const c = this.lastControl;
+    if (c?.kind === 'erg') await this.sendErg(c.watts);
+    else if (c?.kind === 'grade') await this.sendGrade(c.pct);
+  }
+
+  /** Some trainers relay a paired HR strap; use it if present. */
+  private async attachHeartRate(server: BluetoothRemoteGATTServer) {
+    try {
+      const hr = await (await server.getPrimaryService(HEART_RATE_SERVICE)).getCharacteristic(HEART_RATE_MEASUREMENT);
+      await subscribe(hr, (v) => (this.reading = { ...this.reading, heartRate: parseHeartRate(v) }));
+    } catch {
+      // No HR on this device.
+    }
+  }
 }
 
 class FtmsTrainer extends BluetoothTrainer {
@@ -124,16 +158,9 @@ class FtmsTrainer extends BluetoothTrainer {
   readonly controllable = true;
   private lastPowerCmd = -1;
 
-  constructor(
-    device: BluetoothDevice,
-    server: BluetoothRemoteGATTServer,
-    private readonly service: BluetoothRemoteGATTService,
-  ) {
-    super(device, server);
-  }
-
-  async init() {
-    await subscribe(await this.service.getCharacteristic(INDOOR_BIKE_DATA), (v) => {
+  protected async init(server: BluetoothRemoteGATTServer) {
+    const service = await server.getPrimaryService(FTMS_SERVICE);
+    await subscribe(await service.getCharacteristic(INDOOR_BIKE_DATA), (v) => {
       const d = parseIndoorBikeData(v);
       this.noteSample();
       this.reading = {
@@ -142,7 +169,7 @@ class FtmsTrainer extends BluetoothTrainer {
         heartRate: d.heartRate ?? this.reading.heartRate,
       };
     });
-    const control = await this.service.getCharacteristic(FTMS_CONTROL_POINT);
+    const control = await service.getCharacteristic(FTMS_CONTROL_POINT);
     await subscribe(control, (v) => {
       const r = parseControlResponse(v);
       if (r && r.result !== 0x01) console.warn('FTMS control point rejected op', r.requestOp, 'result', r.result);
@@ -152,7 +179,11 @@ class FtmsTrainer extends BluetoothTrainer {
     await this.write(startResume());
   }
 
-  async setTargetPower(watts: number) {
+  protected resetControlCache() {
+    this.lastPowerCmd = -1;
+  }
+
+  protected async sendErg(watts: number) {
     // Ramps call this every frame; only send when the watt value actually changes.
     const w = Math.round(watts);
     if (w === this.lastPowerCmd) return;
@@ -160,7 +191,7 @@ class FtmsTrainer extends BluetoothTrainer {
     await this.write(setTargetPower(w));
   }
 
-  async setGrade(gradePct: number) {
+  protected async sendGrade(gradePct: number) {
     this.lastPowerCmd = -1;
     await this.write(setSimulation({ gradePct }));
   }
@@ -171,17 +202,11 @@ class CyclingPowerTrainer extends BluetoothTrainer {
   readonly protocol: string = 'Power meter';
   readonly controllable: boolean = false;
   private readonly cadence = new CrankCadence();
+  protected cps?: BluetoothRemoteGATTService;
 
-  constructor(
-    device: BluetoothDevice,
-    server: BluetoothRemoteGATTServer,
-    protected readonly service: BluetoothRemoteGATTService,
-  ) {
-    super(device, server);
-  }
-
-  async init() {
-    await subscribe(await this.service.getCharacteristic(CYCLING_POWER_MEASUREMENT), (v) => {
+  protected async init(server: BluetoothRemoteGATTServer) {
+    this.cps = await server.getPrimaryService(CYCLING_POWER_SERVICE);
+    await subscribe(await this.cps.getCharacteristic(CYCLING_POWER_MEASUREMENT), (v) => {
       const d = parseCyclingPower(v);
       this.noteSample();
       this.reading = {
@@ -193,8 +218,9 @@ class CyclingPowerTrainer extends BluetoothTrainer {
   }
 
   // Nothing to control on a plain power meter.
-  async setTargetPower(_watts: number) {}
-  async setGrade(_gradePct: number) {}
+  protected resetControlCache() {}
+  protected async sendErg(_watts: number) {}
+  protected async sendGrade(_gradePct: number) {}
 }
 
 class WahooTrainer extends CyclingPowerTrainer {
@@ -203,28 +229,25 @@ class WahooTrainer extends CyclingPowerTrainer {
   private mode: 'erg' | 'sim' | undefined;
   private lastPowerCmd = -1;
 
-  constructor(
-    device: BluetoothDevice,
-    server: BluetoothRemoteGATTServer,
-    service: BluetoothRemoteGATTService,
-    private readonly controlChar: BluetoothRemoteGATTCharacteristic,
-  ) {
-    super(device, server, service);
-  }
-
-  async init() {
-    await super.init();
+  protected async init(server: BluetoothRemoteGATTServer) {
+    await super.init(server);
+    const control = await this.cps!.getCharacteristic(WAHOO_CONTROL);
     // Responses arrive as indications: [0x01, requestOp, status]. Status 0x01 = success.
-    await subscribe(this.controlChar, (v) => {
+    await subscribe(control, (v) => {
       if (v.byteLength >= 3 && v.getUint8(0) === 0x01 && v.getUint8(2) !== 0x01) {
         console.warn('Wahoo control rejected op', v.getUint8(1), 'status', v.getUint8(2));
       }
     });
-    this.setControl(this.controlChar);
+    this.setControl(control);
     await this.write(wahooUnlock());
   }
 
-  async setTargetPower(watts: number) {
+  protected resetControlCache() {
+    this.mode = undefined;
+    this.lastPowerCmd = -1;
+  }
+
+  protected async sendErg(watts: number) {
     const w = Math.round(watts);
     if (this.mode === 'erg' && w === this.lastPowerCmd) return;
     this.mode = 'erg';
@@ -232,7 +255,7 @@ class WahooTrainer extends CyclingPowerTrainer {
     await this.write(wahooErg(w));
   }
 
-  async setGrade(gradePct: number) {
+  protected async sendGrade(gradePct: number) {
     // Leaving ERG requires re-entering sim mode before a grade is accepted.
     if (this.mode !== 'sim') {
       this.mode = 'sim';
@@ -243,29 +266,32 @@ class WahooTrainer extends CyclingPowerTrainer {
   }
 }
 
-/** Shows the browser's device picker, connects, and picks the best protocol the device supports. */
-export async function connectTrainer(): Promise<BluetoothTrainer> {
-  const device = await navigator.bluetooth.requestDevice({
-    filters: [{ services: [FTMS_SERVICE] }, { services: [CYCLING_POWER_SERVICE] }],
-    optionalServices: [FTMS_SERVICE, CYCLING_POWER_SERVICE, HEART_RATE_SERVICE],
-  });
+/** Connects to a device and picks the best protocol it supports: FTMS, then Wahoo, then read-only power. */
+export async function openTrainer(device: BluetoothDevice): Promise<BluetoothTrainer> {
   const server = await device.gatt!.connect();
-
   let trainer: BluetoothTrainer;
-  const ftms = await server.getPrimaryService(FTMS_SERVICE).catch(() => undefined);
-  if (ftms) {
-    trainer = new FtmsTrainer(device, server, ftms);
-  } else {
-    const cps = await server.getPrimaryService(CYCLING_POWER_SERVICE);
-    const wahoo = await cps.getCharacteristic(WAHOO_CONTROL).catch(() => undefined);
-    trainer = wahoo ? new WahooTrainer(device, server, cps, wahoo) : new CyclingPowerTrainer(device, server, cps);
-  }
   try {
-    await trainer.init();
-    await trainer.attachHeartRate();
+    const ftms = await server.getPrimaryService(FTMS_SERVICE).catch(() => undefined);
+    if (ftms) {
+      trainer = new FtmsTrainer(device);
+    } else {
+      const cps = await server.getPrimaryService(CYCLING_POWER_SERVICE);
+      const wahoo = await cps.getCharacteristic(WAHOO_CONTROL).catch(() => undefined);
+      trainer = wahoo ? new WahooTrainer(device) : new CyclingPowerTrainer(device);
+    }
+    await trainer.connect();
   } catch (err) {
     device.gatt?.disconnect();
     throw err;
   }
   return trainer;
+}
+
+/** Shows the browser's device picker, then opens the chosen trainer. */
+export async function pickTrainer(): Promise<BluetoothTrainer> {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ services: [FTMS_SERVICE] }, { services: [CYCLING_POWER_SERVICE] }],
+    optionalServices: [FTMS_SERVICE, CYCLING_POWER_SERVICE, HEART_RATE_SERVICE],
+  });
+  return openTrainer(device);
 }

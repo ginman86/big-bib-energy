@@ -367,6 +367,17 @@ button {
   gap: 24px;
   padding-bottom: 14px;
 }
+.link-status {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--over);
+  animation: pulse 1s ease-in-out infinite;
+}
+.link-status[hidden] {
+  display: none;
+}
 .ride-head .title {
   font-family: var(--display);
   font-size: 22px;

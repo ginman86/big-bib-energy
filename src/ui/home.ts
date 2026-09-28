@@ -5,24 +5,53 @@ import { normalizedPower, trainingStress } from '../core/metrics';
 import { expand, peakFraction, targetAt, totalDuration, Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
 import { bluetoothAvailable } from '../devices/bluetooth-trainer';
-import type { HeartRateMonitor } from '../devices/heart-rate';
-import type { ControlMode, Trainer } from '../devices/trainer';
+import type { ControlMode } from '../devices/trainer';
 import { LIBRARY } from '../workouts/library';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
 import { drawProfile } from './profile';
 import { loadHistory, Settings } from './storage';
 
+/** What the home screen knows about one device (trainer or HR strap). */
+export interface DeviceSlot {
+  connected?: { name: string; detail?: string; reconnecting: boolean };
+  /** Name of the last-used device, when not connected. */
+  remembered?: string;
+  /** Auto-connecting to the remembered device right now. */
+  searching: boolean;
+}
+
 export interface HomeProps {
   settings: Settings;
-  trainer: Trainer | undefined;
+  trainer: DeviceSlot;
+  heartRate: DeviceSlot;
   onSettings(s: Settings): void;
   onConnect(): Promise<void>;
   onDisconnect(): Promise<void>;
-  heartRate: HeartRateMonitor | undefined;
   onConnectHr(): Promise<void>;
   onDisconnectHr(): Promise<void>;
   onRide(w: Workout): void;
+}
+
+function deviceField(label: string, role: 'trainer' | 'hr', slot: DeviceSlot, idleHint: string, hasBt: boolean): string {
+  const suffix = role === 'hr' ? '-hr' : '';
+  const kind = role === 'hr' ? 'HR' : 'trainer';
+  let control: string;
+  let status: string;
+  if (slot.connected) {
+    const c = slot.connected;
+    control = `<button class="btn" data-role="disconnect${suffix}">Disconnect</button>`;
+    status = c.reconnecting ? `◌ ${esc(c.name)} · reconnecting…` : `● ${esc(c.name)}${c.detail ? ` · ${esc(c.detail)}` : ''}`;
+  } else {
+    const verb = slot.remembered ? `Reconnect ${esc(slot.remembered)}` : `Connect ${kind}`;
+    control = `<button class="btn" data-role="connect${suffix}" ${hasBt ? '' : 'disabled'}>${verb}</button>`;
+    status = !hasBt ? 'Bluetooth needs Chrome or Edge' : slot.searching ? `Looking for ${esc(slot.remembered ?? kind)}…` : idleHint;
+  }
+  return `
+    <div class="field">
+      <span class="label">${label}</span>
+      <div style="display:flex;gap:14px;align-items:center">${control}<span class="trainer-status">${status}</span></div>
+    </div>`;
 }
 
 function estimate(w: Workout, ftp: number) {
@@ -47,7 +76,6 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   const { settings } = props;
   const month = totals(since(loadHistory(), startOfMonth(new Date())));
   const hasBt = bluetoothAvailable();
-  const real = props.trainer && !props.trainer.simulated ? props.trainer : undefined;
 
   const page = html(`
     <main class="home">
@@ -88,28 +116,8 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
               .join('')}
           </div>
         </div>
-        <div class="field">
-          <span class="label">Trainer</span>
-          <div style="display:flex;gap:14px;align-items:center">
-            ${
-              real
-                ? `<button class="btn" data-role="disconnect">Disconnect</button><span class="trainer-status">● ${esc(real.name)} · ${esc(real.protocol)}${real.controllable ? '' : ' (Target mode only)'}</span>`
-                : `<button class="btn" data-role="connect" ${hasBt ? '' : 'disabled'}>Connect trainer</button>
-                   <span class="trainer-status">${hasBt ? 'Simulated rider until connected' : 'Bluetooth needs Chrome or Edge · using simulated rider'}</span>`
-            }
-          </div>
-        </div>
-        <div class="field">
-          <span class="label">Heart rate</span>
-          <div style="display:flex;gap:14px;align-items:center">
-            ${
-              props.heartRate
-                ? `<button class="btn" data-role="disconnect-hr">Disconnect</button><span class="trainer-status">● ${esc(props.heartRate.name)}</span>`
-                : `<button class="btn" data-role="connect-hr" ${hasBt ? '' : 'disabled'}>Connect HR</button>
-                   <span class="trainer-status">${hasBt ? 'Strap or watch in broadcast mode' : ''}</span>`
-            }
-          </div>
-        </div>
+        ${deviceField('Trainer', 'trainer', props.trainer, 'Simulated rider until connected', hasBt)}
+        ${deviceField('Heart rate', 'hr', props.heartRate, 'Strap or watch in broadcast mode', hasBt)}
         <div class="field">
           <span class="label">LTHR (bpm)</span>
           <div class="lthr-row">

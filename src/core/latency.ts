@@ -80,3 +80,6 @@ export class StepResponse {
     return this.samples.length ? this.samples.reduce((a, b) => a + b, 0) / this.samples.length : undefined;
   }
 }
+
+/** Reconnect backoff: quick first retry, then doubling, capped so a trainer coming back is picked up fast. */
+export const reconnectDelayMs = (attempt: number) => (attempt === 0 ? 250 : Math.min(1000 * 2 ** (attempt - 1), 8000));

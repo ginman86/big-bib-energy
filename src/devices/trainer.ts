@@ -20,6 +20,8 @@ export interface Trainer {
   setTargetPower(watts: number): Promise<void>;
   /** Target mode: fixed virtual road; the rider must produce the watts. */
   setGrade(gradePct: number): Promise<void>;
+  /** Bluetooth link state; absent for the simulator (always "connected"). */
+  readonly connection?: 'connected' | 'reconnecting' | 'disconnected';
   /** Data notification rate and freshness (real devices only), for the latency HUD. */
   stats?(nowMs: number): { hz: number; ageMs?: number };
   /** Advance internal state by dt seconds of ride time (simulators only). */

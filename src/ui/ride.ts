@@ -58,6 +58,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       <header class="ride-head">
         <span class="wordmark">BB<i>/</i>E</span>
         <span class="title">${esc(workout.name)}</span>
+        <span class="link-status" data-f="link" hidden></span>
         <span class="spacer"></span>
         <div class="seg" data-role="mode">
           <button data-mode="erg">ERG</button>
@@ -122,6 +123,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     hr: f('hr'),
     hrzone: f('hrzone'),
     segavg: f('segavg'),
+    link: f('link'),
     segpct: f('segpct'),
     ridepct: f('ridepct'),
     next: f('next'),
@@ -192,11 +194,40 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     if (m === 'target') void trainer.setGrade(TARGET_MODE_GRADE);
   }
 
-  function showVeil(state: 'ready' | 'paused') {
-    setText($(veil, '[data-v=title]'), state === 'ready' ? 'Ready' : 'Paused');
-    setText($(veil, '[data-v=go]'), state === 'ready' ? 'Start' : 'Resume');
+  type VeilState = 'ready' | 'paused' | 'lost' | 'back';
+  const VEIL: Record<VeilState, { title: string; go: string }> = {
+    ready: { title: 'Ready', go: 'Start' },
+    paused: { title: 'Paused', go: 'Resume' },
+    lost: { title: 'Reconnecting', go: 'Waiting for trainer…' },
+    back: { title: 'Reconnected', go: 'Resume' },
+  };
+  let veilState: VeilState = 'ready';
+
+  function showVeil(state: VeilState) {
+    veilState = state;
+    setText($(veil, '[data-v=title]'), VEIL[state].title);
+    setText($(veil, '[data-v=go]'), VEIL[state].go);
+    setText($(veil, '[data-v=kicker]'), state === 'lost' ? `${trainer.name} dropped out · ride paused` : workout.name);
     $(veil, '[data-v=end]').hidden = state === 'ready';
+    // Nothing to ride without the trainer; resume becomes available once it's back.
+    $<HTMLButtonElement>(veil, '[data-v=go]').disabled = state === 'lost';
     if (!veil.isConnected) root.append(veil);
+  }
+
+  /** Trainer dropped mid-ride: pause (so time isn't lost), then offer resume once it's back. */
+  function watchLink() {
+    const t = trainer.connection;
+    if (t === 'reconnecting' && session.status === 'running') {
+      session.pause();
+      setText(pauseBtn, 'Resume');
+      showVeil('lost');
+    } else if (t === 'connected' && veilState === 'lost' && veil.isConnected) {
+      showVeil('back');
+    }
+    const hr = props.heartRate?.connection;
+    const msg = t === 'reconnecting' ? 'Trainer reconnecting…' : hr === 'reconnecting' ? 'HR reconnecting…' : '';
+    setText(fields.link, msg);
+    fields.link.hidden = !msg;
   }
 
   function togglePause() {
@@ -270,6 +301,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     last = now;
 
     const targetW = session.targetWatts();
+    watchLink();
     const running = session.status === 'running';
     if (sim) sim.goal = targetW;
     // The sim keeps pedalling while paused/ready so the numbers are live, but ride time doesn't move.
