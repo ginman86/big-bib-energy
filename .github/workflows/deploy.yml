@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy to AWS
 
 on:
   push:
@@ -6,19 +6,23 @@ on:
   workflow_dispatch:
 
 permissions:
+  id-token: write # OIDC: assume the deploy role without stored AWS keys
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy
+  cancel-in-progress: false # never interrupt a terraform apply
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      TF_VAR_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_IN_AUTOMATION: '1'
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -26,20 +30,34 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-        env:
-          # Project site lives at https://<user>.github.io/<repo>/
-          BASE_PATH: /${{ github.event.repository.name }}/
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: dist
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v5
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ~1.16
+          terraform_wrapper: false
+
+      - name: Terraform apply
+        working-directory: infra/main
+        run: |
+          terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          terraform apply -input=false -auto-approve
+
+      - name: Upload site
+        working-directory: infra/main
+        run: |
+          bucket=$(terraform output -raw site_bucket)
+          dist=$(terraform output -raw distribution_id)
+          cd ../../dist
+          # Content-hashed assets: cache forever. Older ones are kept so open tabs keep working.
+          aws s3 sync assets "s3://$bucket/assets" --cache-control "public, max-age=31536000, immutable"
+          # Everything else from public/ (images, icons): cache for an hour.
+          aws s3 sync . "s3://$bucket" --exclude "assets/*" --exclude "index.html" --delete \
+            --cache-control "public, max-age=3600"
+          # index.html last, never cached, so a deploy is live as soon as it lands.
+          aws s3 cp index.html "s3://$bucket/index.html" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$dist" --paths "/" "/index.html" > /dev/null

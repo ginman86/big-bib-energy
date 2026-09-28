@@ -99,7 +99,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
       <section class="settings">
         <label class="field">
           <span class="label">FTP (W)</span>
-          <input class="ftp-input num" type="number" min="80" max="600" step="1" value="${settings.ftp}" />
+          <input class="ftp-input num" name="ftp" type="number" min="80" max="600" step="1" value="${settings.ftp}" />
         </label>
         <div class="field">
           <span class="label">Control</span>
@@ -121,16 +121,16 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
         <div class="field">
           <span class="label">LTHR (bpm)</span>
           <div class="lthr-row">
-            <input class="ftp-input num" data-role="lthr" type="number" min="100" max="220" step="1" value="${settings.hr.lthr ?? ''}" placeholder="—" />
+            <input class="ftp-input num" name="lthr" data-role="lthr" type="number" min="100" max="220" step="1" value="${settings.hr.lthr ?? ''}" placeholder="—" />
             <div class="lthr-help">
               <span class="trainer-status">${esc(lthrNote(settings.hr.source, settings.hr.maxSeen))}</span>
               <button class="link" data-role="estimate-toggle">Don't know it?</button>
             </div>
           </div>
           <div class="estimate" hidden>
-            <label><span class="label">Max HR</span><input class="mini-input num" data-role="maxhr" type="number" min="120" max="230" /></label>
+            <label><span class="label">Max HR</span><input class="mini-input num" name="maxhr" data-role="maxhr" type="number" min="120" max="230" /></label>
             <span class="trainer-status">or</span>
-            <label><span class="label">Age</span><input class="mini-input num" data-role="age" type="number" min="10" max="100" /></label>
+            <label><span class="label">Age</span><input class="mini-input num" name="age" data-role="age" type="number" min="10" max="100" /></label>
             <button class="btn" data-role="estimate">Estimate</button>
           </div>
         </div>
