@@ -120,17 +120,6 @@ data "aws_iam_policy_document" "deploy" {
     ]
   }
   statement {
-    # Terraform decrypts the SecureString parameter (AWS-managed aws/ssm key) when refreshing it.
-    sid       = "SsmDecrypt"
-    actions   = ["kms:Decrypt"]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "kms:ViaService"
-      values   = ["ssm.${var.region}.amazonaws.com"]
-    }
-  }
-  statement {
     # CloudFront, ACM and log-group listing don't support resource-level scoping for these calls.
     sid = "Unscoped"
     actions = [

@@ -9,6 +9,13 @@ variable "strava_client_id" {
 
 locals {
   api_name = "${var.project}-api"
+
+  # The Strava client secret is created and rotated outside Terraform, so its value never enters
+  # Terraform state (an aws_ssm_parameter resource would read it back on every refresh):
+  #   aws ssm put-parameter --name /big-bib-energy/strava-client-secret --type SecureString \
+  #     --overwrite --value '<secret>' --profile ginman --region us-east-1
+  strava_secret_param     = "/${var.project}/strava-client-secret"
+  strava_secret_param_arn = "arn:aws:ssm:${var.region}:${var.account_id}:parameter${local.strava_secret_param}"
 }
 
 data "archive_file" "api" {
@@ -66,19 +73,6 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "fit" {
   }
 }
 
-# The value is set once by hand, so the secret never lands in Terraform state:
-#   aws ssm put-parameter --name /big-bib-energy/strava-client-secret --type SecureString \
-#     --overwrite --value '<secret>' --profile ginman --region us-east-1
-resource "aws_ssm_parameter" "strava_client_secret" {
-  name  = "/${var.project}/strava-client-secret"
-  type  = "SecureString"
-  value = "set-me-with-the-aws-cli"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
-}
-
 # ——— Lambda ———
 
 resource "aws_cloudwatch_log_group" "api" {
@@ -119,7 +113,7 @@ data "aws_iam_policy_document" "api" {
   }
   statement {
     actions   = ["ssm:GetParameter"]
-    resources = [aws_ssm_parameter.strava_client_secret.arn]
+    resources = [local.strava_secret_param_arn]
   }
   statement {
     # SecureString uses the AWS-managed aws/ssm key.
@@ -158,7 +152,7 @@ resource "aws_lambda_function" "api" {
       TABLE               = aws_dynamodb_table.main.name
       FIT_BUCKET          = aws_s3_bucket.fit.bucket
       STRAVA_CLIENT_ID    = var.strava_client_id
-      STRAVA_SECRET_PARAM = aws_ssm_parameter.strava_client_secret.name
+      STRAVA_SECRET_PARAM = local.strava_secret_param
       SITE_ORIGIN         = "https://${var.domain}"
       VERSION             = data.archive_file.api.output_base64sha256
     }
