@@ -9,6 +9,24 @@ import type { ControlMode } from '../devices/trainer';
 import { LIBRARY } from '../workouts/library';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
+
+function accountArea(p: HomeProps): string {
+  if (p.account) {
+    return `
+      <div class="account">
+        <span class="account-name">${esc(p.account.name)}</span>
+        <img class="powered-by" src="${asset('strava/powered-by-strava.svg')}" alt="Powered by Strava" />
+        <button class="link" data-role="signout">Sign out</button>
+      </div>`;
+  }
+  return `
+    <div class="account">
+      ${p.accountNote ? `<span class="trainer-status">${esc(p.accountNote)}</span>` : ''}
+      <button class="strava-connect" data-role="strava-connect">
+        <img src="${asset('strava/connect-with-strava.svg')}" alt="Connect with Strava" />
+      </button>
+    </div>`;
+}
 import { drawProfile } from './profile';
 import { loadHistory, Settings } from './storage';
 
@@ -23,6 +41,14 @@ export interface DeviceSlot {
 
 export interface HomeProps {
   settings: Settings;
+  account?: { name: string; canUpload: boolean };
+  accountNote?: string;
+  /** Strava's FTP, when it differs from ours. */
+  ftpOffer?: number;
+  onStravaConnect(): void;
+  onSignOut(): void;
+  onUseStravaFtp(ftp: number): void;
+  onDismissFtp(): void;
   trainer: DeviceSlot;
   heartRate: DeviceSlot;
   onSettings(s: Settings): void;
@@ -81,7 +107,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
     <main class="home">
       <header class="topbar">
         <span class="wordmark">Big Bib<i>/</i>Energy</span>
-        <span class="label">Indoor training</span>
+        ${accountArea(props)}
       </header>
 
       <section class="hero-head">
@@ -96,6 +122,15 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
         </div>
       </section>
 
+      ${
+        props.ftpOffer
+          ? `<div class="offer">
+              <span>Strava has your FTP at <b>${props.ftpOffer} W</b> (you're using ${settings.ftp} W).</span>
+              <button class="btn primary" data-role="use-strava-ftp">Use ${props.ftpOffer} W</button>
+              <button class="link" data-role="dismiss-ftp">Keep ${settings.ftp} W</button>
+            </div>`
+          : ''
+      }
       <section class="settings">
         <label class="field">
           <span class="label">FTP (W)</span>
@@ -179,6 +214,11 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   page.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => props.onSettings({ ...settings, mode: b.dataset.mode as ControlMode })),
   );
+  page.querySelector('[data-role=strava-connect]')?.addEventListener('click', () => props.onStravaConnect());
+  page.querySelector('[data-role=signout]')?.addEventListener('click', () => props.onSignOut());
+  page.querySelector('[data-role=use-strava-ftp]')?.addEventListener('click', () => props.onUseStravaFtp(props.ftpOffer!));
+  page.querySelector('[data-role=dismiss-ftp]')?.addEventListener('click', () => props.onDismissFtp());
+
   const setHr = (lthr: number, source: LthrSource) => {
     if (lthr >= 100 && lthr <= 220) props.onSettings({ ...settings, hr: { ...settings.hr, lthr, source } });
   };

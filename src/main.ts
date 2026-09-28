@@ -1,4 +1,5 @@
 import './ui/styles.css';
+import { Account, completeStravaSignIn, loadAccount, saveRemoteSettings, signOut, startStravaSignIn } from './api/account';
 import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
 import type { Workout } from './core/workout';
@@ -20,6 +21,10 @@ let realTrainer: BluetoothTrainer | undefined;
 let heartRate: HeartRateMonitor | undefined;
 const searching: Record<Kind, boolean> = { trainer: false, hr: false };
 let screen: 'home' | 'ride' | 'summary' = 'home';
+let account: Account | undefined;
+/** One-off message about sign-in (e.g. Strava declined). */
+let accountNote: string | undefined;
+let ftpOfferDismissed = false;
 let teardown: (() => void) | undefined;
 
 function show(name: typeof screen, render: (root: HTMLElement) => () => void) {
@@ -92,15 +97,73 @@ async function autoConnect() {
   );
 }
 
+// ——— Account ———
+
+/** Settings that follow you between devices. Paired devices stay per-browser. */
+const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr });
+
+function pushSettings() {
+  if (account) saveRemoteSettings(syncable(settings)).catch((err) => console.warn('Settings sync failed', err));
+}
+
+/** On sign-in, the account's saved settings win; a brand-new account adopts this browser's. */
+function adoptAccount(a: Account) {
+  account = a;
+  const remote = a.settings as Partial<Settings> | undefined;
+  if (remote && typeof remote === 'object') {
+    settings = { ...settings, ...remote, hr: { ...settings.hr, ...remote.hr } };
+    saveSettings(settings);
+  } else {
+    pushSettings();
+  }
+}
+
+async function boot() {
+  home();
+  const callback = await completeStravaSignIn();
+  if (callback?.account) adoptAccount(callback.account);
+  else if (callback?.error) accountNote = callback.error;
+  else {
+    const a = await loadAccount();
+    if (a) adoptAccount(a);
+  }
+  refreshHome();
+  void autoConnect();
+}
+
 function home() {
+  const stravaFtp = account?.athlete.ftp;
   show('home', (root) =>
     renderHome(root, {
       settings,
       trainer: slot('trainer'),
       heartRate: slot('hr'),
+      account: account && {
+        name: `${account.athlete.firstname} ${account.athlete.lastname.slice(0, 1)}.`.trim(),
+        canUpload: account.canUpload,
+      },
+      accountNote,
+      ftpOffer: stravaFtp && stravaFtp !== settings.ftp && !ftpOfferDismissed ? stravaFtp : undefined,
+      onStravaConnect: startStravaSignIn,
+      async onSignOut() {
+        await signOut().catch(() => undefined);
+        account = undefined;
+        home();
+      },
+      onUseStravaFtp(ftp) {
+        settings = { ...settings, ftp };
+        saveSettings(settings);
+        pushSettings();
+        home();
+      },
+      onDismissFtp() {
+        ftpOfferDismissed = true;
+        home();
+      },
       onSettings(next: Settings) {
         settings = next;
         saveSettings(settings);
+        pushSettings();
         home();
       },
       async onConnect() {
@@ -182,5 +245,4 @@ function summary(session: Session) {
   );
 }
 
-home();
-void autoConnect();
+void boot();

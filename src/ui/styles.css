@@ -171,6 +171,46 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
+.account {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.account-name {
+  font-family: var(--display);
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.powered-by {
+  height: 14px;
+  opacity: 0.85;
+}
+.strava-connect {
+  background: none;
+  border: 0;
+  padding: 0;
+  line-height: 0;
+}
+/* Strava's button at its 48 px size, from the official asset. */
+.strava-connect img {
+  height: 40px;
+}
+.offer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 24px 0 0;
+  padding: 14px 18px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--text-2);
+}
+.offer b {
+  color: var(--text);
+}
+
 .hero-head {
   padding: 72px 0 48px;
   display: grid;
