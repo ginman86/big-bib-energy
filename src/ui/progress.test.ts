@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { earnedBy } from '../core/achievements';
 import { HistoryRide, progression } from '../core/progression';
-import { progressPanel, xpReveal } from './progress';
+import { patchWall, powerBlock, statsLine, xpReveal } from './progress';
 
 const DAY = 86_400_000;
 const MON = Date.UTC(2026, 8, 28, 7);
@@ -36,9 +36,10 @@ describe('progress UI', () => {
   it('says simulated rides earn nothing, and shows the wall with every patch', () => {
     const p = progression([ride(0)], opts);
     expect(xpReveal({ simulated: true, before: p, after: p, newlyEarned: [] })).toContain("don't earn XP");
-    const panel = progressPanel(p, 3);
-    expect(panel).toContain('Pedal Pusher');
-    expect((panel.match(/class="patch-badge/g) ?? []).length).toBe(23);
-    expect((panel.match(/class="patch-badge earned/g) ?? []).length).toBe(1); // Big Bib Debut
+    expect(powerBlock(p)).toContain('Pedal Pusher');
+    expect(statsLine(p, { rides: 1, seconds: 3600, avgCompliance: 0.8 }, 3)).toContain('1</b>/23 patches');
+    const wall = patchWall(p);
+    expect((wall.match(/class="patch-badge/g) ?? []).length).toBe(23);
+    expect((wall.match(/class="patch-badge earned/g) ?? []).length).toBe(1); // Big Bib Debut
   });
 });

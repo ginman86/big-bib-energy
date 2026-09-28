@@ -31,6 +31,7 @@ let account: Account | undefined;
 /** One-off message about sign-in (e.g. Strava declined). */
 let accountNote: string | undefined;
 let ftpOfferDismissed = false;
+let setupOpen = false;
 /** Whether the ride that just finished used the simulated rider. */
 let lastRideSimulated = true;
 /** Local rides until signed in; then local merged with the account's synced rides. */
@@ -228,6 +229,10 @@ function home() {
         home();
       },
       onRide: ride,
+      setupOpen,
+      onSetup(open) {
+        setupOpen = open;
+      },
     }),
   );
 }

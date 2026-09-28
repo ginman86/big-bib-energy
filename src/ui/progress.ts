@@ -28,49 +28,60 @@ export function patch(a: Achievement, tier: number, opts: { progress?: number; s
     </div>`;
 }
 
-export function progressPanel(p: Progression, weeklyGoal: number): string {
+/** The one big number on home: power level, rank, and progress to the next rank. */
+export function powerBlock(p: Progression): string {
   const { rank, next, progress } = p.rank;
+  return `
+    <div class="power-block">
+      <span class="label">Power level</span>
+      <span class="num pl-value">${fmt(p.xp)}</span>
+      <div class="rank-line">
+        <span class="rank-name">${esc(rank.name)}</span>
+        <span class="label">${next ? `${fmt(next.xp - p.xp)} to ${esc(next.name)}` : 'Max rank. Absolute unit.'}</span>
+      </div>
+      <div class="rank-bar"><span style="width:${progress * 100}%"></span></div>
+    </div>`;
+}
+
+export interface MonthLine {
+  rides: number;
+  seconds: number;
+  avgCompliance: number;
+}
+
+/** Everything secondary, as one quiet line: streak, this month, patches. */
+export function statsLine(p: Progression, month: MonthLine, weeklyGoal: number): string {
   const tiers = tiersEarned(p.achievements);
   const earnedCount = ACHIEVEMENTS.filter((a) => tiers[a.id] >= 0).length;
   const dots = Array.from({ length: weeklyGoal }, (_, i) => `<i class="${i < p.streak.thisWeek ? 'on' : ''}"></i>`).join('');
+  const h = Math.floor(month.seconds / 3600);
+  const m = Math.round((month.seconds % 3600) / 60);
   return `
-    <section class="progress-panel">
-      <div class="pl">
-        <span class="label">Power level</span>
-        <span class="num pl-value">${fmt(p.xp)}</span>
-        <div class="rank-name">${esc(rank.name)}</div>
-        <div class="rank-bar"><span style="width:${progress * 100}%"></span></div>
-        <span class="label">${next ? `${fmt(next.xp - p.xp)} to ${esc(next.name)}` : 'Max rank. Absolute unit.'}</span>
-      </div>
-      <div class="streak">
-        <span class="label">Weekly streak</span>
-        <span class="num streak-value">${p.streak.weeks}<small>${p.streak.weeks === 1 ? 'week' : 'weeks'}</small></span>
-        <div class="week-dots" title="${p.streak.thisWeek} of ${weeklyGoal} rides this week">${dots}</div>
-        <div class="goal">
-          <span class="label">Goal ${weeklyGoal}/week</span>
-          <button class="link" data-goal="-1" aria-label="Lower weekly goal">−</button>
-          <button class="link" data-goal="1" aria-label="Raise weekly goal">+</button>
-        </div>
-      </div>
-      <div class="patches-summary">
-        <span class="label">Patches</span>
-        <span class="num">${earnedCount}<small>/ ${ACHIEVEMENTS.length}</small></span>
-        <button class="link" data-role="toggle-wall">Show the wall</button>
-      </div>
-    </section>
-    <section class="patch-wall" hidden>
-      ${(['precision', 'effort', 'consistency', 'volume', 'silly'] as const)
-        .map(
-          (cat) => `
-        <div class="wall-row">
-          <span class="label">${cat}</span>
-          <div class="wall-patches">${ACHIEVEMENTS.filter((a) => a.category === cat)
-            .map((a) => patch(a, tiers[a.id], { progress: p.achievements.progress[a.id] }))
-            .join('')}</div>
-        </div>`,
-        )
-        .join('')}
-    </section>`;
+    <div class="stats-line">
+      <span class="stat" title="${p.streak.thisWeek} of ${weeklyGoal} rides this week">
+        <b>${p.streak.weeks}</b> wk streak <span class="week-dots">${dots}</span>
+      </span>
+      <span class="stat"><b>${month.rides}</b> rides · <b>${h ? `${h}h ${m}m` : `${m}m`}</b> this month${
+        month.rides ? ` · <b>${Math.round(month.avgCompliance * 100)}%</b> on target` : ''
+      }</span>
+      <button class="stat stat-link" data-role="open-wall"><b>${earnedCount}</b>/${ACHIEVEMENTS.length} patches ›</button>
+    </div>`;
+}
+
+/** The full patch wall, shown in an overlay. */
+export function patchWall(p: Progression): string {
+  const tiers = tiersEarned(p.achievements);
+  return (['precision', 'effort', 'consistency', 'volume', 'silly'] as const)
+    .map(
+      (cat) => `
+      <div class="wall-row">
+        <span class="label">${cat}</span>
+        <div class="wall-patches">${ACHIEVEMENTS.filter((a) => a.category === cat)
+          .map((a) => patch(a, tiers[a.id], { progress: p.achievements.progress[a.id] }))
+          .join('')}</div>
+      </div>`,
+    )
+    .join('');
 }
 
 export interface Reveal {
