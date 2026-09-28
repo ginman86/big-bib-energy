@@ -3,7 +3,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 )
 
@@ -18,12 +17,34 @@ type Athlete struct {
 	Access    string          `dynamodbav:"stravaAccess"`
 	Refresh   string          `dynamodbav:"stravaRefresh"`
 	ExpiresAt int64           `dynamodbav:"stravaExpiresAt"`
-	Settings  json.RawMessage `dynamodbav:"settings,omitempty"` // app settings JSON (FTP, LTHR, rider…)
+	Settings  JSONText        `dynamodbav:"settings,omitempty"` // app settings JSON (FTP, LTHR, rider…)
 	CreatedAt time.Time       `dynamodbav:"createdAt"`
 	UpdatedAt time.Time       `dynamodbav:"updatedAt"`
 }
 
+// Ride is one completed ride. The .fit file lives in blob storage under FitKey.
+type Ride struct {
+	AthleteID int64     `dynamodbav:"athleteId"`
+	ID        string    `dynamodbav:"rideId"`
+	StartedAt time.Time `dynamodbav:"startedAt"`
+	Name      string    `dynamodbav:"name"`
+	Summary   JSONText  `dynamodbav:"summary"` // the app's RideSummary, without per-block detail
+	FitKey    string    `dynamodbav:"fitKey"`
+	// Strava upload state.
+	StravaUploadID   int64     `dynamodbav:"stravaUploadId,omitempty"`
+	StravaActivityID int64     `dynamodbav:"stravaActivityId,omitempty"`
+	StravaError      string    `dynamodbav:"stravaError,omitempty"`
+	CreatedAt        time.Time `dynamodbav:"createdAt"`
+	UpdatedAt        time.Time `dynamodbav:"updatedAt"`
+}
+
 type Store interface {
+	PutRide(ctx context.Context, r *Ride) error
+	// GetRide returns nil, nil when not found.
+	GetRide(ctx context.Context, athleteID int64, startedAt time.Time, id string) (*Ride, error)
+	// ListRides returns rides started at or after since, oldest first.
+	ListRides(ctx context.Context, athleteID int64, since time.Time) ([]Ride, error)
+
 	// GetAthlete returns nil, nil when not found.
 	GetAthlete(ctx context.Context, id int64) (*Athlete, error)
 	PutAthlete(ctx context.Context, a *Athlete) error

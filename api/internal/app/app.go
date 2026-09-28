@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -41,12 +42,14 @@ type Config struct {
 type App struct {
 	cfg    Config
 	store  store.Store
+	blobs  store.Blobs
 	strava *strava.Client
 	now    func() time.Time
+	poll   time.Duration // Strava upload status poll interval
 }
 
-func New(cfg Config, s store.Store, sc *strava.Client) *App {
-	return &App{cfg: cfg, store: s, strava: sc, now: time.Now}
+func New(cfg Config, s store.Store, b store.Blobs, sc *strava.Client) *App {
+	return &App{cfg: cfg, store: s, blobs: b, strava: sc, now: time.Now, poll: pollInterval}
 }
 
 func (a *App) Handler() http.Handler {
@@ -57,6 +60,8 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /api/me", a.authed(a.me))
 	mux.HandleFunc("PUT /api/me/settings", a.csrf(a.authed(a.putSettings)))
 	mux.HandleFunc("DELETE /api/me", a.csrf(a.authed(a.deleteMe)))
+	mux.HandleFunc("POST /api/rides", a.csrf(a.authed(a.postRide)))
+	mux.HandleFunc("GET /api/rides", a.authed(a.listRides))
 	return mux
 }
 
@@ -198,7 +203,7 @@ func meResponse(ath *store.Athlete) me {
 	m.Athlete.ID, m.Athlete.Firstname, m.Athlete.Lastname = ath.ID, ath.Firstname, ath.Lastname
 	m.Athlete.FTP, m.Athlete.WeightKg = ath.FTP, ath.WeightKg
 	m.CanUpload = strava.ParseScopes(ath.Scopes)["activity:write"]
-	m.Settings = ath.Settings
+	m.Settings = json.RawMessage(ath.Settings)
 	return m
 }
 
@@ -212,7 +217,7 @@ func (a *App) putSettings(w http.ResponseWriter, r *http.Request, s athleteCtx) 
 		writeError(w, http.StatusBadRequest, "settings must be JSON under 16 KB")
 		return
 	}
-	s.athlete.Settings = body
+	s.athlete.Settings = store.JSONText(body)
 	s.athlete.UpdatedAt = a.now()
 	if err := a.store.PutAthlete(r.Context(), s.athlete); err != nil {
 		a.fail(w, r, err)
@@ -224,7 +229,7 @@ func (a *App) putSettings(w http.ResponseWriter, r *http.Request, s athleteCtx) 
 // deleteMe revokes Strava access and deletes everything we hold for the athlete.
 func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, s athleteCtx) {
 	ctx := r.Context()
-	if access, err := a.freshAccess(r, s.athlete); err == nil {
+	if access, err := a.freshAccessCtx(ctx, s.athlete); err == nil {
 		if err := a.strava.Deauthorize(ctx, access); err != nil {
 			slog.WarnContext(ctx, "strava deauthorize failed", "err", err)
 		}
@@ -238,17 +243,17 @@ func (a *App) deleteMe(w http.ResponseWriter, r *http.Request, s athleteCtx) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// freshAccess returns a valid Strava access token, refreshing (and persisting) it if needed.
-func (a *App) freshAccess(r *http.Request, ath *store.Athlete) (string, error) {
+// freshAccessCtx returns a valid Strava access token, refreshing (and persisting) it if needed.
+func (a *App) freshAccessCtx(ctx context.Context, ath *store.Athlete) (string, error) {
 	if !strava.Expired(ath.ExpiresAt, a.now()) {
 		return ath.Access, nil
 	}
-	tok, err := a.strava.Refresh(r.Context(), ath.Refresh)
+	tok, err := a.strava.Refresh(ctx, ath.Refresh)
 	if err != nil {
 		return "", err
 	}
 	ath.Access, ath.Refresh, ath.ExpiresAt = tok.AccessToken, tok.RefreshToken, tok.ExpiresAt
-	return ath.Access, a.store.PutAthlete(r.Context(), ath)
+	return ath.Access, a.store.PutAthlete(ctx, ath)
 }
 
 // ——— Plumbing ———

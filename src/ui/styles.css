@@ -825,6 +825,20 @@ button {
   justify-content: space-between;
   gap: 32px;
 }
+.strava-status {
+  margin-top: 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+/* Strava's guidelines: "View on Strava" in bold / orange. */
+.view-on-strava {
+  color: #fc5200;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .crest {
   width: clamp(160px, 20vw, 260px);
   height: auto;

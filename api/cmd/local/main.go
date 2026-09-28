@@ -39,6 +39,7 @@ func main() {
 	a := app.New(
 		app.Config{Version: "local", Origins: []string{"http://localhost:5173", "http://127.0.0.1:5173"}},
 		store.NewMemory(),
+		store.NewMemoryBlobs(),
 		strava.New(*clientID, secret),
 	)
 	log.Printf("Big Bib Energy API on http://%s (in-memory store)", *addr)

@@ -57,7 +57,7 @@ func newHarness(t *testing.T) *harness {
 	sc := strava.New("282789", func(context.Context) (string, error) { return "shh", nil })
 	sc.BaseURL = srv.URL
 	mem := store.NewMemory()
-	return &harness{t: t, h: New(Config{Origins: []string{origin}}, mem, sc).Handler(), store: mem, deauths: &d}
+	return &harness{t: t, h: New(Config{Origins: []string{origin}}, mem, store.NewMemoryBlobs(), sc).Handler(), store: mem, deauths: &d}
 }
 
 func (h *harness) do(method, path, body string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -161,7 +161,7 @@ func TestSessionsExpire(t *testing.T) {
 	h := newHarness(t)
 	h.do("POST", "/api/auth/strava", `{"code":"abc","scope":"read"}`, ok)
 	// Jump past the session TTL.
-	app := New(Config{Origins: []string{origin}}, h.store, nil)
+	app := New(Config{Origins: []string{origin}}, h.store, store.NewMemoryBlobs(), nil)
 	app.now = func() time.Time { return time.Now().Add(sessionTTL + time.Hour) }
 	h.h = app.Handler()
 	if rec := h.do("GET", "/api/me", "", nil); rec.Code != 401 {
@@ -185,7 +185,7 @@ func TestDeleteAccount(t *testing.T) {
 
 func TestHealth(t *testing.T) {
 	rec := httptest.NewRecorder()
-	New(Config{Version: "test"}, store.NewMemory(), nil).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/health", nil))
+	New(Config{Version: "test"}, store.NewMemory(), store.NewMemoryBlobs(), nil).Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/health", nil))
 	if rec.Code != 200 || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("health %d %v", rec.Code, rec.Header())
 	}

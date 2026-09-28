@@ -1,5 +1,6 @@
 import './ui/styles.css';
 import { Account, completeStravaSignIn, loadAccount, saveRemoteSettings, signOut, startStravaSignIn } from './api/account';
+import { flushQueue, pendingRide, sendRide } from './api/uploads';
 import { sustainedMaxHr } from './core/hr';
 import type { Session } from './core/session';
 import type { Workout } from './core/workout';
@@ -25,6 +26,8 @@ let account: Account | undefined;
 /** One-off message about sign-in (e.g. Strava declined). */
 let accountNote: string | undefined;
 let ftpOfferDismissed = false;
+/** Whether the ride that just finished used the simulated rider. */
+let lastRideSimulated = true;
 let teardown: (() => void) | undefined;
 
 function show(name: typeof screen, render: (root: HTMLElement) => () => void) {
@@ -128,6 +131,7 @@ async function boot() {
     if (a) adoptAccount(a);
   }
   refreshHome();
+  if (account?.canUpload) void flushQueue();
   void autoConnect();
 }
 
@@ -200,6 +204,7 @@ function home() {
 
 function ride(workout: Workout) {
   const trainer: Trainer = realTrainer ?? new SimulatedTrainer(settings.ftp);
+  lastRideSimulated = trainer.simulated;
   show('ride', (root) =>
     renderRide(root, {
       workout,
@@ -232,9 +237,13 @@ function summary(session: Session) {
     settings = { ...settings, hr: { ...settings.hr, maxSeen: maxHr } };
     saveSettings(settings);
   }
+  // Built once so a retry re-sends the identical ride (same ID), which the API treats as idempotent.
+  const pending = account && s.seconds >= 60 ? pendingRide(s, session.samples) : undefined;
   show('summary', (root) =>
     renderSummary(root, {
       session,
+      upload: pending && (() => sendRide(pending)),
+      manualUpload: lastRideSimulated,
       lthr: settings.hr.lthr,
       onAcceptLthr(lthr) {
         settings = { ...settings, hr: { ...settings.hr, lthr, source: 'learned' } };

@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/ginman86/big-bib-energy/api/internal/app"
@@ -25,6 +26,7 @@ func main() {
 	}
 	st := &store.Dynamo{DB: dynamodb.NewFromConfig(cfg), Table: os.Getenv("TABLE")}
 	sc := strava.New(os.Getenv("STRAVA_CLIENT_ID"), secrets.SSM(ssm.NewFromConfig(cfg), os.Getenv("STRAVA_SECRET_PARAM")))
-	a := app.New(app.Config{Version: os.Getenv("VERSION"), Origins: []string{os.Getenv("SITE_ORIGIN")}}, st, sc)
+	blobs := &store.S3Blobs{S3: s3.NewFromConfig(cfg), Bucket: os.Getenv("FIT_BUCKET")}
+	a := app.New(app.Config{Version: os.Getenv("VERSION"), Origins: []string{os.Getenv("SITE_ORIGIN")}}, st, blobs, sc)
 	lambda.Start(lambdaurl.Handler(a.Handler()))
 }

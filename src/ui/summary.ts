@@ -5,11 +5,16 @@ import { mean } from '../core/metrics';
 import type { Session } from '../core/session';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
+import type { StravaStatus } from '../api/uploads';
 import { drawHrStrip } from './hr-chart';
 import { drawProfile } from './profile';
 
 export interface SummaryProps {
   session: Session;
+  /** Present when signed in with Strava: uploads the ride and resolves with the outcome. */
+  upload?: () => Promise<StravaStatus>;
+  /** Simulated rides don't auto-upload (no fake activities on Strava); offer a button instead. */
+  manualUpload?: boolean;
   lthr?: number;
   onAcceptLthr(lthr: number): void;
   onDone(): void;
@@ -70,7 +75,25 @@ function verdict(compliance: number): string {
   return 'Ride <em>logged.</em>';
 }
 
-export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, onDone }: SummaryProps): () => void {
+function stravaLine(st: StravaStatus | 'uploading'): string {
+  if (st === 'uploading') return `<span class="trainer-status">Uploading to Strava…</span>`;
+  switch (st.status) {
+    case 'uploaded':
+      return `<a class="view-on-strava" href="${esc(st.url ?? '')}" target="_blank" rel="noopener">View on Strava</a>`;
+    case 'processing':
+      return `<span class="trainer-status">Strava is still processing. It'll appear shortly.</span>`;
+    case 'not-connected':
+      return `<span class="trainer-status">Reconnect Strava from home to allow uploads.</span>`;
+    default:
+      return `<span class="trainer-status">${esc(st.error ?? 'Strava upload failed')}</span>
+        <button class="link" data-role="retry-upload">Retry</button>`;
+  }
+}
+
+export function renderSummary(
+  root: HTMLElement,
+  { session, lthr, onAcceptLthr, onDone, upload, manualUpload }: SummaryProps,
+): () => void {
   const s = session.summary();
   const scored = s.segments.filter((x) => x.under + x.over + x.compliance > 0);
 
@@ -88,6 +111,7 @@ export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, 
         <div>
           <h1>${verdict(s.compliance)}</h1>
           <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W</div>
+          ${upload ? '<div class="strava-status" data-role="strava-status"></div>' : ''}
         </div>
         ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}
       </section>
@@ -154,6 +178,25 @@ export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, 
   draw();
   window.addEventListener('resize', draw);
   $(page, '[data-role=done]').addEventListener('click', onDone);
+
+  const statusEl = page.querySelector<HTMLElement>('[data-role=strava-status]');
+  let alive = true;
+  const runUpload = () => {
+    if (!statusEl || !upload) return;
+    statusEl.innerHTML = stravaLine('uploading');
+    void upload().then((st) => {
+      if (!alive) return;
+      statusEl.innerHTML = stravaLine(st);
+      statusEl.querySelector('[data-role=retry-upload]')?.addEventListener('click', runUpload);
+    });
+  };
+  if (manualUpload && statusEl) {
+    statusEl.innerHTML = `<span class="trainer-status">Simulated ride: not uploaded automatically.</span>
+      <button class="link" data-role="manual-upload">Upload to Strava anyway</button>`;
+    statusEl.querySelector('[data-role=manual-upload]')?.addEventListener('click', runUpload);
+  } else {
+    runUpload();
+  }
   page.querySelector('[data-role=fit]')?.addEventListener('click', () => {
     const startedAtMs = s.startedAtMs ?? Date.now() - s.seconds * 1000;
     const bytes = encodeFitActivity({
@@ -169,5 +212,8 @@ export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, 
   });
   window.scrollTo(0, 0);
 
-  return () => window.removeEventListener('resize', draw);
+  return () => {
+    alive = false;
+    window.removeEventListener('resize', draw);
+  };
 }

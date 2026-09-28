@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { rideDescription, rideTitle } from './activity-text';
 import { LevelFilter, powerLevel } from './avatar';
 import { classify } from './compliance';
 import { ErgGovernor } from './erg';
@@ -355,5 +356,19 @@ describe('stopping pedalling', () => {
 describe('reconnect backoff', () => {
   it('retries quickly, then backs off to a cap', () => {
     expect([0, 1, 2, 3, 4, 5, 9].map(reconnectDelayMs)).toEqual([250, 1000, 2000, 4000, 8000, 8000, 8000]);
+  });
+});
+
+describe('strava activity text', () => {
+  it('titles with the workout and compliance, describes load', () => {
+    const s = new Session(workout, 200);
+    s.start(Date.UTC(2026, 8, 28));
+    while (s.status === 'running') s.advance(1, { power: s.targetWatts(), heartRate: 150 });
+    const summary = s.summary();
+    expect(rideTitle(summary)).toMatch(/^Test · \d+% on target$/);
+    const d = rideDescription(summary);
+    expect(d).toContain('Dialled in.');
+    expect(d).toMatch(/NP \d+ W · TSS \d+ · IF \d\.\d\d · avg HR 150/);
+    expect(d).toContain('bigbib.ginman.dev');
   });
 });

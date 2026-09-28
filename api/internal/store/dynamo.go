@@ -21,7 +21,13 @@ type Dynamo struct {
 	Table string
 }
 
-func athleteKey(id int64) string { return "ATHLETE#" + strconv.FormatInt(id, 10) }
+func athleteKey(id int64) string { return "ATHLETE#" + fmtInt(id) }
+func fmtInt(id int64) string     { return strconv.FormatInt(id, 10) }
+
+// rideSK sorts rides by start time; the ID keeps same-second starts distinct.
+func rideSK(startedAt time.Time, id string) string {
+	return "RIDE#" + startedAt.UTC().Format(time.RFC3339) + "#" + id
+}
 func sessionKey(h string) string { return "SESSION#" + h }
 
 func key(pk, sk string) map[string]types.AttributeValue {
@@ -124,4 +130,59 @@ func (d *Dynamo) GetSession(ctx context.Context, hash string, now time.Time) (in
 func (d *Dynamo) DeleteSession(ctx context.Context, hash string) error {
 	_, err := d.DB.DeleteItem(ctx, &dynamodb.DeleteItemInput{TableName: &d.Table, Key: key(sessionKey(hash), "SESSION")})
 	return err
+}
+
+func (d *Dynamo) PutRide(ctx context.Context, r *Ride) error {
+	item, err := attributevalue.MarshalMap(r)
+	if err != nil {
+		return err
+	}
+	for k, v := range key(athleteKey(r.AthleteID), rideSK(r.StartedAt, r.ID)) {
+		item[k] = v
+	}
+	_, err = d.DB.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.Table, Item: item})
+	return err
+}
+
+func (d *Dynamo) GetRide(ctx context.Context, athleteID int64, startedAt time.Time, id string) (*Ride, error) {
+	out, err := d.DB.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: &d.Table, Key: key(athleteKey(athleteID), rideSK(startedAt, id)), ConsistentRead: aws.Bool(true),
+	})
+	if err != nil || out.Item == nil {
+		return nil, err
+	}
+	var r Ride
+	if err := attributevalue.UnmarshalMap(out.Item, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (d *Dynamo) ListRides(ctx context.Context, athleteID int64, since time.Time) ([]Ride, error) {
+	var out []Ride
+	var start map[string]types.AttributeValue
+	for {
+		res, err := d.DB.Query(ctx, &dynamodb.QueryInput{
+			TableName:              &d.Table,
+			KeyConditionExpression: aws.String("pk = :pk AND sk BETWEEN :from AND :to"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk":   &types.AttributeValueMemberS{Value: athleteKey(athleteID)},
+				":from": &types.AttributeValueMemberS{Value: "RIDE#" + since.UTC().Format(time.RFC3339)},
+				":to":   &types.AttributeValueMemberS{Value: "RIDE#~"},
+			},
+			ExclusiveStartKey: start,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var page []Ride
+		if err := attributevalue.UnmarshalListOfMaps(res.Items, &page); err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if res.LastEvaluatedKey == nil {
+			return out, nil
+		}
+		start = res.LastEvaluatedKey
+	}
 }

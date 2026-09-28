@@ -66,6 +66,16 @@ Z1 < 81%, Z2 81–89%, Z3 90–93%, Z4 94–99%, Z5 ≥ 100% (Friel's cycling zo
   you actually held, suggests an updated LTHR. Highest sustained (5 s) HR from real sensors is
   remembered as "max seen".
 
+## Strava
+
+"Connect with Strava" on the home screen signs you in (Strava tokens stay server-side; the browser
+holds an HttpOnly session cookie). Signed in, your settings follow you between devices, the app
+offers your Strava FTP, and **rides on a real trainer upload automatically** as indoor rides
+titled like "Sweet Spot 3×10 · 94% on target", with "View on Strava" on the summary. Simulated
+rides only upload if you press the button. Uploads that fail or are still processing are queued
+and retried the next time the app opens; retries reuse the ride ID, so nothing is uploaded twice.
+Design: [docs/strava-design.md](docs/strava-design.md); API: [api/README.md](api/README.md).
+
 ## Rider avatar
 
 An original ink-style rider (male or female, chosen on the home screen) powers up with your
