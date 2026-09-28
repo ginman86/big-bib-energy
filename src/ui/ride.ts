@@ -236,7 +236,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       showVeil('paused');
       setText(pauseBtn, 'Resume');
     } else if (session.status === 'ready' || session.status === 'paused') {
-      session.start();
+      session.start(Date.now());
       veil.remove();
       setText(pauseBtn, 'Pause');
     }

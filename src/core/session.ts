@@ -52,6 +52,8 @@ export interface SegmentSummary {
 
 export interface RideSummary {
   workoutId: string;
+  /** Wall-clock time the ride first started (ms since Unix epoch), if known. */
+  startedAtMs?: number;
   workoutName: string;
   ftp: number;
   seconds: number;
@@ -77,6 +79,7 @@ export class Session {
   readonly samples: Sample[] = [];
   readonly stats: SegmentStats[];
   status: Status = 'ready';
+  startedAtMs?: number;
   elapsed = 0;
 
   private window: { t: number; power: number }[] = [];
@@ -95,7 +98,9 @@ export class Session {
     this.stats = this.segments.map((s) => emptyStats(s.index));
   }
 
-  start() {
+  /** `nowMs` is wall-clock time, recorded on the first start for exports (FIT) and history. */
+  start(nowMs?: number) {
+    if (this.status === 'ready' && nowMs !== undefined) this.startedAtMs = nowMs;
     if (this.status === 'ready' || this.status === 'paused') this.status = 'running';
   }
 
@@ -193,6 +198,7 @@ export class Session {
     const cad = this.samples.flatMap((s) => (s.cadence ? [s.cadence] : []));
     return {
       workoutId: this.workout.id,
+      startedAtMs: this.startedAtMs,
       workoutName: this.workout.name,
       ftp: this.ftp,
       seconds: this.samples.length,

@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.core.json"
   },
   "devDependencies": {
+    "@garmin/fitsdk": "^21.217.0",
     "@types/web-bluetooth": "^0.0.21",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",

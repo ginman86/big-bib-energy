@@ -160,7 +160,8 @@ function summary(session: Session) {
   const s = session.summary();
   if (s.seconds >= 60) {
     const { segments: _segments, ...rest } = s;
-    appendHistory({ id: crypto.randomUUID(), startedAt: new Date(Date.now() - s.seconds * 1000).toISOString(), summary: rest });
+    const startedAt = new Date(s.startedAtMs ?? Date.now() - s.seconds * 1000).toISOString();
+    appendHistory({ id: crypto.randomUUID(), startedAt, summary: rest });
   }
   const maxHr = sustainedMaxHr(session.samples);
   // Only real HR counts toward max seen, not the simulator's.

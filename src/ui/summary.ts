@@ -1,3 +1,4 @@
+import { encodeFitActivity, fitFileName } from '../core/fit';
 import { clock, pct } from '../core/format';
 import { HR_ZONES, suggestLthr, sustainedMaxHr, timeInHrZones } from '../core/hr';
 import { mean } from '../core/metrics';
@@ -77,7 +78,10 @@ export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, 
     <main class="summary">
       <header class="topbar">
         <span class="wordmark">Big Bib<i>/</i>Energy</span>
-        <button class="btn primary" data-role="done">Done</button>
+        <div style="display:flex;gap:12px">
+          ${session.samples.length ? '<button class="btn" data-role="fit">Download .fit</button>' : ''}
+          <button class="btn primary" data-role="done">Done</button>
+        </div>
       </header>
 
       <section class="summary-head">
@@ -150,6 +154,19 @@ export function renderSummary(root: HTMLElement, { session, lthr, onAcceptLthr, 
   draw();
   window.addEventListener('resize', draw);
   $(page, '[data-role=done]').addEventListener('click', onDone);
+  page.querySelector('[data-role=fit]')?.addEventListener('click', () => {
+    const startedAtMs = s.startedAtMs ?? Date.now() - s.seconds * 1000;
+    const bytes = encodeFitActivity({
+      startedAtMs,
+      utcOffsetS: -new Date(startedAtMs).getTimezoneOffset() * 60,
+      summary: s,
+      samples: session.samples,
+    });
+    const url = URL.createObjectURL(new Blob([bytes], { type: 'application/vnd.ant.fit' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: fitFileName(s, startedAtMs) });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
   window.scrollTo(0, 0);
 
   return () => window.removeEventListener('resize', draw);
