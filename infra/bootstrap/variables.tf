@@ -19,8 +19,12 @@ variable "project" {
   default = "big-bib-energy"
 }
 
-variable "github_repo" {
-  description = "owner/name allowed to assume the deploy role from GitHub Actions."
+variable "github_sub_prefix" {
+  description = <<-EOT
+    OIDC subject prefix for this repo. It uses GitHub's immutable subject format (owner and repo
+    IDs), so a renamed or re-created repo with the same name can't assume the role. Look it up with:
+      gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+  EOT
   type        = string
-  default     = "ginman86/big-bib-energy"
+  default     = "repo:ginman86@3515076/big-bib-energy@1386253641"
 }
