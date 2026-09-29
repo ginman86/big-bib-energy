@@ -19,6 +19,8 @@ export interface ProfileOptions {
   tolerance?: Tolerance;
   /** FTP line, time axis, target tunnel. */
   detailed?: boolean;
+  /** Rider's difficulty setting: targets are drawn scaled by this (the FTP line isn't). */
+  scale?: number;
 }
 
 type Palette = Record<'text' | 'text2' | 'text3' | 'line' | 'accent' | Band, string> & { zones: string[] };
@@ -83,12 +85,14 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
   const { ctx, width, height } = prepare(canvas);
   const c = colors();
   const { segments, ftp, samples = [], elapsed, detailed = false } = opts;
+  // Watts per unit of workout intensity: FTP, adjusted by the rider's difficulty.
+  const tw = ftp * (opts.scale ?? 1);
   const tol = opts.tolerance ?? DEFAULT_TOLERANCE;
   const [t0, t1] = opts.range ?? [0, totalDuration(segments)];
   if (t1 <= t0) return;
 
   const visible = samples.filter((s) => s.t >= t0 && s.t <= t1);
-  const maxW = Math.max(peakFraction(segments) * ftp * 1.12, ftp * 1.15, ...visible.map((s) => s.power * 1.05));
+  const maxW = Math.max(peakFraction(segments) * tw * 1.12, ftp * 1.15, ...visible.map((s) => s.power * 1.05));
   const top = detailed ? 14 : 2;
   const bottom = detailed ? 22 : 0;
   const x = (t: number) => ((t - t0) / (t1 - t0)) * width;
@@ -106,8 +110,8 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
     ctx.fillStyle = s.kind === 'free' ? hatch(ctx, c) : c.zones[zone.id - 1];
     ctx.beginPath();
     ctx.moveTo(x(s.start), y(0));
-    ctx.lineTo(x(s.start), y(s.from * ftp));
-    ctx.lineTo(x(s.end), y(s.to * ftp));
+    ctx.lineTo(x(s.start), y(s.from * tw));
+    ctx.lineTo(x(s.end), y(s.to * tw));
     ctx.lineTo(x(s.end), y(0));
     ctx.closePath();
     ctx.fill();
@@ -120,8 +124,8 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
     ctx.strokeStyle = current ? c.text : c.text3;
     ctx.lineWidth = current ? 1.5 : 1;
     ctx.beginPath();
-    ctx.moveTo(x(s.start), y(s.from * ftp));
-    ctx.lineTo(x(s.end), y(s.to * ftp));
+    ctx.moveTo(x(s.start), y(s.from * tw));
+    ctx.lineTo(x(s.end), y(s.to * tw));
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -134,7 +138,7 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
       const a = Math.max(s.start, t0, elapsed ?? t0);
       const b = Math.min(s.end, t1);
       if (b <= a) continue;
-      const at = (t: number) => (s.from + ((s.to - s.from) * (t - s.start)) / (s.end - s.start)) * ftp;
+      const at = (t: number) => (s.from + ((s.to - s.from) * (t - s.start)) / (s.end - s.start)) * tw;
       const wa = at(a);
       const wb = at(b);
       ctx.beginPath();

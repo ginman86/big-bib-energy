@@ -160,6 +160,54 @@ button {
   cursor: not-allowed;
 }
 
+/* Difficulty: − 100% + in the ride header. */
+.intensity {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+}
+.intensity[hidden] {
+  display: none;
+}
+.intensity button {
+  background: transparent;
+  border: 0;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: var(--text-2);
+}
+.intensity button:hover {
+  color: var(--text);
+}
+.intensity .num {
+  display: inline-block;
+  min-width: 48px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.intensity.changed {
+  border-color: var(--accent);
+}
+.intensity.changed .num {
+  color: var(--text);
+}
+.intensity.flash .num {
+  animation: intensity-flash 0.6s ease-out;
+}
+@keyframes intensity-flash {
+  from {
+    color: var(--accent);
+    transform: scale(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intensity.flash .num {
+    animation: none;
+  }
+}
+
 /* ——— Home ——— */
 
 .home {

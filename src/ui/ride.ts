@@ -62,6 +62,11 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
         <span class="title">${esc(workout.name)}</span>
         <span class="link-status" data-f="link" hidden></span>
         <span class="spacer"></span>
+        <div class="intensity" data-role="intensity" title="Difficulty: ↑ harder · ↓ easier (Shift: 5%)">
+          <button data-int="-1" aria-label="Easier">−</button>
+          <span class="num" data-f="intensity">100%</span>
+          <button data-int="1" aria-label="Harder">+</button>
+        </div>
         <div class="seg" data-role="mode">
           <button data-mode="erg">ERG</button>
           <button data-mode="target">Target</button>
@@ -126,6 +131,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     hrzone: f('hrzone'),
     segavg: f('segavg'),
     link: f('link'),
+    intensity: f('intensity'),
     segpct: f('segpct'),
     ridepct: f('ridepct'),
     next: f('next'),
@@ -138,6 +144,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const hrCanvas = $<HTMLCanvasElement>(page, '.hr-chart');
   const pauseBtn = $<HTMLButtonElement>(page, '[data-role=pause]');
   const skipBtn = $<HTMLButtonElement>(page, '[data-role=skip]');
+  const intensityBox = $(page, '[data-role=intensity]');
 
   const avatar = props.avatar !== 'off' ? new Avatar(props.avatar) : undefined;
   const levels = new LevelFilter();
@@ -154,7 +161,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
           <button class="btn" data-v="end" hidden>End ride</button>
           <button class="btn" data-v="quit">Quit</button>
         </div>
-        <p class="label" style="text-align:center;margin-top:28px;color:var(--text-3)">Space pause · → skip · L latency${sim ? ' · ↑↓ push the rider' : ''}</p>
+        <p class="label" style="text-align:center;margin-top:28px;color:var(--text-3)">Space pause · → skip · ↑↓ difficulty · L latency${sim ? ' · W/S push the rider' : ''}</p>
       </div>
     </div>
   `);
@@ -166,9 +173,9 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
         <div class="seg" data-role="speed">
           ${[1, 4, 16].map((s) => `<button data-speed="${s}" aria-pressed="${s === 1}">${s}×</button>`).join('')}
         </div>
-        <button class="btn" data-bias="-15" title="↓">−</button>
+        <button class="btn" data-bias="-15" title="S">−</button>
         <span class="label num" data-role="bias" style="min-width:48px;text-align:center">±0 W</span>
-        <button class="btn" data-bias="15" title="↑">+</button>
+        <button class="btn" data-bias="15" title="W">+</button>
       </div>
     `);
     panel.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((b) =>
@@ -180,6 +187,20 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     panel.querySelectorAll<HTMLButtonElement>('[data-bias]').forEach((b) => b.addEventListener('click', () => nudge(Number(b.dataset.bias))));
     $(page, '.ride-head .spacer').after(panel);
   }
+
+  /** Difficulty in 1% steps; every target (and ERG) follows. */
+  function adjust(steps: number) {
+    const v = session.setIntensity(session.intensity + steps / 100);
+    setText(fields.intensity, `${Math.round(v * 100)}%`);
+    intensityBox.classList.toggle('changed', v !== 1);
+    intensityBox.classList.remove('flash');
+    void intensityBox.offsetWidth; // restart the animation
+    intensityBox.classList.add('flash');
+  }
+  intensityBox.hidden = !!workout.test; // a ramp test runs as written
+  intensityBox.querySelectorAll<HTMLButtonElement>('[data-int]').forEach((b) =>
+    b.addEventListener('click', () => adjust(Number(b.dataset.int))),
+  );
 
   function nudge(watts: number) {
     if (!sim) return;
@@ -267,13 +288,11 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       e.preventDefault();
       togglePause();
     } else if (e.key === 'ArrowRight') session.skip();
-    else if (e.key === 'ArrowUp') {
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
-      nudge(15);
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      nudge(-15);
-    } else if (e.key === 'Escape' && session.status === 'running') togglePause();
+      adjust((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 5 : 1));
+    } else if (sim && (e.key === 'w' || e.key === 'W')) nudge(15);
+    else if (sim && (e.key === 's' || e.key === 'S')) nudge(-15); else if (e.key === 'Escape' && session.status === 'running') togglePause();
     else if (e.key === 'l' || e.key === 'L') hud.hidden = !hud.hidden;
   };
   window.addEventListener('keydown', onKey);
@@ -316,7 +335,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     // Free ride has no target: ERG lets go (flat road) and soft-starts again afterwards.
     const inFree = isFree(segmentAt(session.segments, session.elapsed));
     if (mode === 'erg') {
-      const leadW = running ? Math.round((leadTarget(session.segments, session.elapsed, ERG_LEAD_S) ?? 0) * ftp) : targetW;
+      const leadW = running ? Math.round((leadTarget(session.segments, session.elapsed, ERG_LEAD_S) ?? 0) * ftp * session.intensity) : targetW;
       const cmd = erg.update({ nowMs: now, active: running && !inFree, targetW: leadW, powerW: reading.power, cadence: reading.cadence });
       if (cmd.kind === 'erg') {
         freeSent = false;
@@ -437,7 +456,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     setText(fields.segpct, s.settling ? '—' : pct(s.segmentCompliance));
     setText(fields.ridepct, pct(s.totalCompliance));
     if (s.next) {
-      const what = isFree(s.next) ? 'free ride' : `@ ${Math.round(s.next.from * ftp)} W`;
+      const what = isFree(s.next) ? 'free ride' : `@ ${Math.round(s.next.from * ftp * session.intensity)} W`;
       setText(fields.next, `${clock(s.next.end - s.next.start)} ${what} · in ${clock(s.segmentRemaining)}`);
       nextBox.classList.toggle('soon', live && s.segmentRemaining <= 10);
     } else {
@@ -452,6 +471,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       samples: session.samples,
       elapsed: s.elapsed,
       range: [t0, t0 + WINDOW_SPAN],
+      scale: session.intensity,
       live: { t: s.elapsed, power: s.powerW, target: s.targetW },
       tolerance: session.tolerance,
       detailed: true,
@@ -466,7 +486,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     });
     if (now - lastOverview > 500) {
       lastOverview = now;
-      drawProfile(overview, { segments: session.segments, ftp, samples: session.samples, elapsed: s.elapsed });
+      drawProfile(overview, { segments: session.segments, ftp, samples: session.samples, elapsed: s.elapsed, scale: session.intensity });
     }
   }
 

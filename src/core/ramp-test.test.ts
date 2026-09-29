@@ -75,3 +75,30 @@ describe('ramp test', () => {
     expect(s.summary().rampTest).toBeUndefined();
   });
 });
+
+describe('difficulty', () => {
+  const w = { id: 'x', name: 'x', description: '', steps: [{ kind: 'steady' as const, duration: 600, power: 0.8 }] };
+
+  it('scales targets, is clamped, and reports a time-weighted average', () => {
+    const s = new Session(w, 250);
+    s.start(0);
+    expect(s.targetWatts()).toBe(200);
+    for (let t = 0; t < 300; t++) s.advance(1, { power: 200, cadence: 90 });
+    expect(s.setIntensity(1.1)).toBe(1.1);
+    expect(s.targetWatts()).toBe(220);
+    for (let t = 0; t < 300; t++) s.advance(1, { power: 220, cadence: 90 });
+    const sum = s.summary();
+    expect(sum.intensity).toBe(1.05);
+    expect(sum.compliance).toBeGreaterThan(0.95); // scored against the adjusted target
+    expect(s.setIntensity(3)).toBe(1.5);
+    expect(s.setIntensity(0.1)).toBe(0.5);
+  });
+
+  it('is absent when untouched, and locked for a ramp test', () => {
+    const s = new Session(w, 250);
+    s.start(0);
+    s.advance(1, { power: 200 });
+    expect(s.summary().intensity).toBeUndefined();
+    expect(new Session(rampTestWorkout(), 250).setIntensity(1.2)).toBe(1);
+  });
+});

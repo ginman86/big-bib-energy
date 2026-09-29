@@ -74,6 +74,8 @@ export interface RideSummary {
   avgCadence?: number;
   segments: SegmentSummary[];
   rampTest?: RampTestResult;
+  /** Time-weighted difficulty the rider chose (1 = as written). Absent when never changed. */
+  intensity?: number;
 }
 
 const SMOOTHING_SECONDS = 3;
@@ -92,6 +94,8 @@ export class Session {
   /** Workout time jumped over with skip(). */
   skippedSeconds = 0;
   elapsed = 0;
+  /** Rider's difficulty: every target is scaled by this. 1 = the workout as written. */
+  intensity = 1;
   /** Ride time a ramp test ended early (the rider failed or stopped it). */
   testEndedAt?: number;
 
@@ -100,6 +104,9 @@ export class Session {
   private last: Reading = { power: 0 };
   private unscored = false;
   private failing = 0;
+  private intensityTime = 0;
+  private riddenTime = 0;
+  private intensityChanged = false;
 
   constructor(
     readonly workout: Workout,
@@ -133,7 +140,16 @@ export class Session {
 
   targetWatts(t = this.elapsed): number {
     const f = targetAt(this.segments, Math.min(t, this.duration - 1e-6));
-    return f === null ? 0 : Math.round(f * this.ftp);
+    return f === null ? 0 : Math.round(f * this.ftp * this.intensity);
+  }
+
+  /** Harder or easier than written, 50–150%. A ramp test stays as written. Returns the new value. */
+  setIntensity(v: number): number {
+    if (this.workout.test) return this.intensity;
+    const next = Math.round(Math.min(1.5, Math.max(0.5, v)) * 100) / 100;
+    if (next !== this.intensity) this.intensityChanged = true;
+    this.intensity = next;
+    return next;
   }
 
   /** Jump to the start of the next segment. In a ramp test, stops the test. */
@@ -193,6 +209,9 @@ export class Session {
         return this.snapshot();
       }
     }
+
+    this.intensityTime += this.intensity * dt;
+    this.riddenTime += dt;
 
     const end = this.elapsed + dt;
     while (this.nextSampleAt < end && this.nextSampleAt < this.duration) {
@@ -254,6 +273,7 @@ export class Session {
       compliance: compliance(combine(this.stats)),
       avgHeartRate: hr.length ? mean(hr) : undefined,
       avgCadence: cad.length ? mean(cad) : undefined,
+      intensity: this.intensityChanged && this.riddenTime > 0 ? Math.round((this.intensityTime / this.riddenTime) * 100) / 100 : undefined,
       rampTest: rampTestResult(this.workout, this.segments, this.samples, this.testEndedAt),
       segments: this.segments.map((segment, i) => {
         const s = this.stats[i];

@@ -141,7 +141,7 @@ export function renderSummary(
       <section class="summary-head">
         <div>
           <h1>${s.rampTest ? 'Emptied the <em>tank.</em>' : verdict(s.compliance)}</h1>
-          <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W</div>
+          <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W${s.intensity ? ` · ridden at ${Math.round(s.intensity * 100)}%` : ''}</div>
           ${upload ? '<div class="strava-status" data-role="strava-status"></div>' : ''}
         </div>
         ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}

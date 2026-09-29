@@ -17,5 +17,6 @@ function verdict(compliance: number): string {
 export function rideDescription(s: RideSummary): string {
   const load = [`NP ${Math.round(s.normalizedPower)} W`, `TSS ${Math.round(s.tss)}`, `IF ${s.intensityFactor.toFixed(2)}`];
   if (s.avgHeartRate) load.push(`avg HR ${Math.round(s.avgHeartRate)}`);
+  if (s.intensity && s.intensity !== 1) load.push(`at ${Math.round(s.intensity * 100)}% difficulty`);
   return [verdict(s.compliance), load.join(' · '), 'Big Bib Energy · bigbib.ginman.dev'].join('\n');
 }
