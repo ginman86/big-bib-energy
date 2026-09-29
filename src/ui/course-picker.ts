@@ -68,7 +68,8 @@ export function coursePicker(p: CoursePickerProps): string {
         <span class="wordmark">Courses</span>
         <button class="link" data-role="close-courses">Close</button>
       </header>
-      <p class="hint course-intro">Where your watts take you: speed and distance come from the course's hills, your weight and the air at its altitude.</p>
+      <p class="hint course-intro">Where your watts take you: speed and distance come from the course's hills, your weight and the air at its altitude.
+        Routes © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>; elevations from USGS, NRCan and IGN.</p>
       <ol class="course-grid">
         <li class="course-card${p.courseId === SURPRISE ? ' selected' : ''}">
           <button class="course-pick surprise" data-course="${SURPRISE}" aria-pressed="${p.courseId === SURPRISE}">
