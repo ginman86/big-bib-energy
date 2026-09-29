@@ -377,6 +377,12 @@ function summary(session: Session, recorder: FactsRecorder) {
       reveal,
       manualUpload: lastRideSimulated,
       lthr: settings.hr.lthr,
+      simulated: lastRideSimulated,
+      onAcceptFtp(ftp) {
+        settings = { ...settings, ftp };
+        saveSettings(settings);
+        pushSettings();
+      },
       onAcceptLthr(lthr) {
         settings = { ...settings, hr: { ...settings.hr, lthr, source: 'learned' } };
         saveSettings(settings);

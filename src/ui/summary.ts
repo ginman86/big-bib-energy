@@ -2,7 +2,7 @@ import { encodeFitActivity, fitFileName } from '../core/fit';
 import { clock, pct } from '../core/format';
 import { HR_ZONES, suggestLthr, sustainedMaxHr, timeInHrZones } from '../core/hr';
 import { mean } from '../core/metrics';
-import type { Session } from '../core/session';
+import type { RideSummary, Session } from '../core/session';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
 import type { StravaStatus } from '../api/uploads';
@@ -19,7 +19,10 @@ export interface SummaryProps {
   /** Simulated rides don't auto-upload (no fake activities on Strava); offer a button instead. */
   manualUpload?: boolean;
   lthr?: number;
+  /** Simulated rides show a ramp test result but don't offer it as your FTP. */
+  simulated?: boolean;
   onAcceptLthr(lthr: number): void;
+  onAcceptFtp(ftp: number): void;
   onDone(): void;
 }
 
@@ -68,6 +71,31 @@ function hrSection(session: Session, lthr: number | undefined, blocks: ReturnTyp
     </section>`;
 }
 
+function rampSection(s: RideSummary, simulated?: boolean): string {
+  const r = s.rampTest;
+  if (!r) return '';
+  const change = r.ftp - s.ftp;
+  const delta = change === 0 ? 'same as now' : `${change > 0 ? '+' : '−'}${Math.abs(change)} W on ${s.ftp} W`;
+  const note = r.topped
+    ? 'You rode every step, so this is a floor: your FTP is at least this.'
+    : `Step ${r.steps} of the ramp. Best minute ${r.bestMinuteW} W × 75%.` +
+      (change < -0.1 * s.ftp ? ' Well below your current FTP: if you stopped for another reason, keep the old one.' : '');
+  const action = simulated
+    ? '<span class="label">Simulated · FTP unchanged</span>'
+    : change === 0
+      ? ''
+      : `<button class="btn primary" data-role="accept-ftp" data-ftp="${r.ftp}">Set FTP to ${r.ftp} W</button>`;
+  return `
+    <section class="ramp-result">
+      <div>
+        <span class="label">Ramp test · FTP</span>
+        <div class="ramp-ftp"><span class="num">${r.ftp}</span><small>W</small><span class="label">${delta}</span></div>
+        <p>${note}</p>
+      </div>
+      ${action}
+    </section>`;
+}
+
 /** Hold the line this well and you've earned the flaming bibs. */
 const CREST_COMPLIANCE = 0.9;
 
@@ -95,7 +123,7 @@ function stravaLine(st: StravaStatus | 'uploading'): string {
 
 export function renderSummary(
   root: HTMLElement,
-  { session, lthr, onAcceptLthr, onDone, upload, manualUpload, reveal }: SummaryProps,
+  { session, lthr, simulated, onAcceptLthr, onAcceptFtp, onDone, upload, manualUpload, reveal }: SummaryProps,
 ): () => void {
   const s = session.summary();
   const scored = s.segments.filter((x) => x.under + x.over + x.compliance > 0);
@@ -112,12 +140,14 @@ export function renderSummary(
 
       <section class="summary-head">
         <div>
-          <h1>${verdict(s.compliance)}</h1>
+          <h1>${s.rampTest ? 'Emptied the <em>tank.</em>' : verdict(s.compliance)}</h1>
           <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W</div>
           ${upload ? '<div class="strava-status" data-role="strava-status"></div>' : ''}
         </div>
         ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}
       </section>
+
+      ${rampSection(s, simulated)}
 
       ${reveal ? xpReveal(reveal) : ''}
 
@@ -179,6 +209,11 @@ export function renderSummary(
     const btn = e.currentTarget as HTMLButtonElement;
     onAcceptLthr(Number(btn.dataset.lthr));
     btn.replaceWith(Object.assign(document.createElement('span'), { className: 'label', textContent: 'Zones updated ✓' }));
+  });
+  page.querySelector<HTMLButtonElement>('[data-role=accept-ftp]')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    onAcceptFtp(Number(btn.dataset.ftp));
+    btn.replaceWith(Object.assign(document.createElement('span'), { className: 'label', textContent: 'FTP updated ✓' }));
   });
   draw();
   window.addEventListener('resize', draw);

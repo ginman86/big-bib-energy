@@ -160,7 +160,15 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
       const actions = mine
         ? `<button class="link" data-act="edit">Edit</button><button class="link" data-act="dup">Duplicate</button>
            <button class="link" data-act="export">Export .zwo</button><button class="link" data-act="delete">Delete</button>`
-        : `<button class="link" data-act="dup">Duplicate &amp; edit</button>`;
+        : w.test
+          ? '' // a copy would be plain steps, without the test's stop-when-you-fail logic
+          : `<button class="link" data-act="dup">Duplicate &amp; edit</button>`;
+      // A ramp test's length and load depend on where you crack, so the full profile misleads.
+      const meta = w.test
+        ? `<span class="label">~20–25M</span><span class="label">FTP test</span>`
+        : `<span class="label">${hoursMinutes(est.seconds)}</span>
+              <span class="label">TSS ${Math.round(est.tss)}</span>
+              <span class="label">${esc(est.focus)}</span>`;
       const li = html(`
         <li class="workout" tabindex="0">
           <span class="workout-idx">${String(i + 1).padStart(2, '0')}</span>
@@ -168,9 +176,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
             <div class="workout-name">${esc(w.name)}</div>
             ${w.description ? `<p class="workout-desc">${esc(w.description)}</p>` : ''}
             <div class="workout-meta">
-              <span class="label">${hoursMinutes(est.seconds)}</span>
-              <span class="label">TSS ${Math.round(est.tss)}</span>
-              <span class="label">${esc(est.focus)}</span>
+              ${meta}
               <span class="workout-actions">${actions}</span>
             </div>
           </div>

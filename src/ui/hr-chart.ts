@@ -59,6 +59,7 @@ export function drawHrStrip(canvas: HTMLCanvasElement, { samples, range: [t0, t1
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';
     for (let i = 1; i < pts.length; i++) {
+      if (pts[i].t - pts[i - 1].t > 2) continue; // skipped time
       ctx.strokeStyle = lthr ? hrZoneColor(hrZoneFor(pts[i].bpm, lthr).id) : css('--text');
       ctx.beginPath();
       ctx.moveTo(x(pts[i - 1].t), y(pts[i - 1].bpm));

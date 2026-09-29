@@ -1489,6 +1489,37 @@ dialog::backdrop {
   color: var(--text);
 }
 
+.ramp-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 32px;
+  padding: 22px 24px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+}
+.ramp-ftp {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 6px;
+}
+.ramp-ftp .num {
+  font-size: 56px;
+  line-height: 1;
+}
+.ramp-ftp small {
+  color: var(--text-2);
+  margin-right: 8px;
+}
+.ramp-result p {
+  margin: 8px 0 0;
+  color: var(--text-2);
+}
+
 .intervals {
   width: 100%;
   border-collapse: collapse;

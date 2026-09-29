@@ -1,4 +1,5 @@
-import { minutes, ramp, repeat, steady, Workout } from '../core/workout';
+import { rampTestWorkout } from '../core/ramp-test';
+import { free, minutes, ramp, repeat, Step, steady, Workout } from '../core/workout';
 
 const warmup = (m = 10) => ramp(minutes(m), 0.45, 0.72, 'Warm up');
 const cooldown = (m = 8) => ramp(minutes(m), 0.65, 0.4, 'Cool down');
@@ -15,6 +16,7 @@ export const LIBRARY: Workout[] = [
       ramp(45, 0.7, 0.45, 'Cool down'),
     ],
   },
+  rampTestWorkout(),
   {
     id: 'sweet-spot-3x10',
     name: 'Sweet Spot 3×10',
@@ -71,5 +73,69 @@ export const LIBRARY: Workout[] = [
       steady(minutes(12), 0.68, 'Endurance'),
       ramp(minutes(8), 0.65, 0.45, 'Cool down'),
     ],
+  },
+  {
+    id: 'sweet-spot-2x30',
+    name: 'Sweet Spot 2×30',
+    description: 'For when 3×10 gets easy. Two long ones, settle in and stay there.',
+    steps: [warmup(), steady(minutes(30), 0.9, 'Sweet spot 1/2'), steady(minutes(5), 0.55, 'Recover'), steady(minutes(30), 0.9, 'Sweet spot 2/2'), cooldown()],
+  },
+  {
+    id: 'threshold-2x20',
+    name: 'Threshold 2×20',
+    description: 'The classic FTP builder. Twenty minutes right at threshold, twice. Pace it; don’t chase it.',
+    steps: [
+      warmup(),
+      ...repeat(3, steady(30, 1.1, 'Opener'), steady(90, 0.55, 'Easy')),
+      steady(minutes(5), 0.55, 'Recover'),
+      steady(minutes(20), 0.97, 'Threshold 1/2'),
+      steady(minutes(5), 0.55, 'Recover'),
+      steady(minutes(20), 0.97, 'Threshold 2/2'),
+      cooldown(),
+    ],
+  },
+  {
+    id: 'thirty-fifteens',
+    name: '30/15s',
+    description: 'Rønnestad’s short intervals: three sets of 13 × 30 s hard, 15 s easy. Keeps you at VO2 max longer than long reps do.',
+    steps: [
+      warmup(),
+      steady(minutes(3), 0.6, 'Settle'),
+      ...[1, 2, 3].flatMap((set): Step[] => [
+        ...Array.from({ length: 13 }, (_, i): Step[] => [steady(30, 1.2, `Set ${set} · ${i + 1}/13`), steady(15, 0.5, `Set ${set} · float`)]).flat(),
+        steady(minutes(3), 0.5, set < 3 ? `Recover ${set}/2` : 'Recover'),
+      ]),
+      cooldown(),
+    ],
+  },
+  {
+    id: 'hard-start-4x4',
+    name: 'Hard-Start 4×4',
+    description: 'Each four opens with 30 s hard, then settles above threshold. You reach VO2 max sooner and stay there.',
+    steps: [
+      warmup(12),
+      ...[1, 2, 3, 4].flatMap((i): Step[] => [
+        steady(30, 1.4, `Hard start ${i}/4`),
+        steady(210, 1.1, `Hold ${i}/4`),
+        ...(i < 4 ? [steady(minutes(4), 0.5, `Recover ${i}/3`)] : []),
+      ]),
+      cooldown(),
+    ],
+  },
+  {
+    id: 'sprints',
+    name: 'Sprints',
+    description: 'Eight 10-second sprints. Free ride lets go of the trainer: shift up and go all out.',
+    steps: [
+      ramp(minutes(15), 0.5, 0.7, 'Warm up'),
+      ...[1, 2, 3, 4, 5, 6, 7, 8].flatMap((i): Step[] => [free(10, `Sprint ${i}/8`), steady(290, 0.5, i < 8 ? `Recover ${i}/7` : 'Spin out')]),
+      ramp(minutes(8), 0.55, 0.4, 'Cool down'),
+    ],
+  },
+  {
+    id: 'recovery-spin',
+    name: 'Recovery Spin',
+    description: 'Legs only. If it feels like training, go easier.',
+    steps: [ramp(minutes(5), 0.4, 0.5, 'Spin up'), steady(minutes(30), 0.5, 'Easy'), ramp(minutes(5), 0.5, 0.4, 'Spin down')],
   },
 ];

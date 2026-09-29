@@ -64,9 +64,12 @@ export class SimulatedTrainer implements Trainer {
       aim = this.goal + this.bias + this.drift;
       tau = 3.5;
     }
+    // Everyone has a ceiling (so a ramp test ends): past 1.5× FTP the legs go.
+    const cracked = aim > this.ftp * 1.5;
+    if (cracked) aim = this.ftp * 1.05;
     this.power += (aim - this.power) * (1 - Math.exp(-dt / tau));
 
-    const cadenceAim = 86 + Math.min(10, this.power / 40) + (Math.random() - 0.5) * 3;
+    const cadenceAim = cracked ? 55 : 86 + Math.min(10, this.power / 40) + (Math.random() - 0.5) * 3;
     this.cadence += (cadenceAim - this.cadence) * (1 - Math.exp(-dt / 2));
 
     const hrAim = 60 + (this.power / this.ftp) * 105;

@@ -4,6 +4,7 @@
 import { accumulate, avgPower, Band, classify, combine, compliance, DEFAULT_TOLERANCE, emptyStats, SegmentStats, Tolerance } from './compliance';
 import { intensityFactor, mean, normalizedPower, trainingStress } from './metrics';
 import type { RideFacts } from './facts';
+import { FAIL_FRACTION, FAIL_SECONDS, inTestRange, rampTestResult, RampTestResult } from './ramp-test';
 import { expand, isFree, Segment, segmentAt, targetAt, totalDuration, Workout } from './workout';
 
 export interface Reading {
@@ -42,6 +43,8 @@ export interface Snapshot {
   segmentCompliance: number;
   totalCompliance: number;
   segmentAvgPower: number;
+  /** In the climbing part of a ramp test. */
+  testing: boolean;
 }
 
 export interface SegmentSummary {
@@ -70,6 +73,7 @@ export interface RideSummary {
   avgHeartRate?: number;
   avgCadence?: number;
   segments: SegmentSummary[];
+  rampTest?: RampTestResult;
 }
 
 const SMOOTHING_SECONDS = 3;
@@ -88,11 +92,14 @@ export class Session {
   /** Workout time jumped over with skip(). */
   skippedSeconds = 0;
   elapsed = 0;
+  /** Ride time a ramp test ended early (the rider failed or stopped it). */
+  testEndedAt?: number;
 
   private window: { t: number; power: number }[] = [];
   private nextSampleAt = 0;
   private last: Reading = { power: 0 };
   private unscored = false;
+  private failing = 0;
 
   constructor(
     readonly workout: Workout,
@@ -129,12 +136,24 @@ export class Session {
     return f === null ? 0 : Math.round(f * this.ftp);
   }
 
-  /** Jump to the start of the next segment. */
+  /** Jump to the start of the next segment. In a ramp test, stops the test. */
   skip() {
     const seg = segmentAt(this.segments, this.elapsed);
     if (!seg) return;
+    if (inTestRange(this.workout, seg)) return this.endTest();
     this.skippedSeconds += seg.end - this.elapsed;
     this.elapsed = seg.end;
+    this.nextSampleAt = Math.ceil(this.elapsed);
+    this.window = [];
+    if (this.elapsed >= this.duration) this.finish();
+  }
+
+  /** Ramp test over: straight to the cool-down. Not counted as skipped; that's how the test ends. */
+  endTest() {
+    const test = this.workout.test;
+    if (!test || this.testEndedAt !== undefined || !inTestRange(this.workout, segmentAt(this.segments, this.elapsed))) return;
+    this.testEndedAt = this.elapsed;
+    this.elapsed = this.segments[test.last].end;
     this.nextSampleAt = Math.ceil(this.elapsed);
     this.window = [];
     if (this.elapsed >= this.duration) this.finish();
@@ -162,6 +181,17 @@ export class Session {
     if (seg && !unscored && !isFree(seg) && !this.isSettling(seg)) {
       const band = classify(this.smoothedPower(), targetW, this.tolerance);
       accumulate(this.stats[seg.index], band, reading.power, targetW, dt);
+    }
+
+    // Ramp test: FAIL_SECONDS below FAIL_FRACTION of the step (or coasting) ends it.
+    if (inTestRange(this.workout, seg)) {
+      const struggling = coasting || this.smoothedPower() < targetW * FAIL_FRACTION;
+      this.failing = struggling ? this.failing + dt : 0;
+      if (this.failing >= FAIL_SECONDS) {
+        this.failing = 0;
+        this.endTest();
+        return this.snapshot();
+      }
     }
 
     const end = this.elapsed + dt;
@@ -202,6 +232,7 @@ export class Session {
       segmentCompliance: seg ? compliance(this.stats[seg.index]) : 0,
       segmentAvgPower: seg ? avgPower(this.stats[seg.index]) : 0,
       totalCompliance: compliance(combine(this.stats)),
+      testing: inTestRange(this.workout, seg),
     };
   }
 
@@ -223,6 +254,7 @@ export class Session {
       compliance: compliance(combine(this.stats)),
       avgHeartRate: hr.length ? mean(hr) : undefined,
       avgCadence: cad.length ? mean(cad) : undefined,
+      rampTest: rampTestResult(this.workout, this.segments, this.samples, this.testEndedAt),
       segments: this.segments.map((segment, i) => {
         const s = this.stats[i];
         return {

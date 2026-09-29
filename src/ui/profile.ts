@@ -213,6 +213,8 @@ function drawTrace(
     ctx.moveTo(x(pts[i].t), y(pts[i].p));
     let j = i + 1;
     while (j < pts.length) {
+      // Skipped time (a skip, or a ramp test ending early): leave a gap rather than a bridge.
+      if (pts[j].t - pts[j - 1].t > 2) break;
       ctx.lineTo(x(pts[j].t), y(pts[j].p));
       if (pts[j].band !== band) break;
       j++;

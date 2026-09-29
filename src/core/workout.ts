@@ -18,6 +18,8 @@ export interface Workout {
   name: string;
   description: string;
   steps: Step[];
+  /** A ramp test: steps `first`..`last` climb until the rider can't hold them (see core/ramp-test). */
+  test?: { kind: 'ramp'; first: number; last: number };
 }
 
 /** A step placed on the workout timeline, in seconds from the start. */

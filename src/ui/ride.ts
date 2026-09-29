@@ -137,6 +137,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const windowCanvas = $<HTMLCanvasElement>(page, '.window');
   const hrCanvas = $<HTMLCanvasElement>(page, '.hr-chart');
   const pauseBtn = $<HTMLButtonElement>(page, '[data-role=pause]');
+  const skipBtn = $<HTMLButtonElement>(page, '[data-role=skip]');
 
   const avatar = props.avatar !== 'off' ? new Avatar(props.avatar) : undefined;
   const levels = new LevelFilter();
@@ -403,6 +404,9 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       renderHud(now);
     }
     setText(fields.target, s.free ? '—' : String(s.targetW));
+    // In a ramp test, skip stops the test (and goes to the cool-down).
+    setText(skipBtn, s.testing ? 'I’m done' : 'Skip');
+    skipBtn.title = s.testing ? 'End the test and cool down (→)' : 'Skip interval (→)';
     const diff = Math.round(Math.abs(s.targetW - s.powerW));
     setText(fields.state, verdict(s, live, diff));
 
