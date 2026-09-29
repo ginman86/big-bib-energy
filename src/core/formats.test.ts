@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { liveWorkouts, mergeCustom } from './custom-workouts';
 import { FormatError, importWorkoutFile, parseZwo, toZwo } from './formats';
 import { formatWorkoutText, parseWorkoutText, WorkoutSyntaxError } from './workout-text';
 import { expand, totalDuration } from './workout';
@@ -117,5 +118,18 @@ describe('text syntax', () => {
     for (const bad of ['', '10m', '10m 90 (', '3x(10m 90', 'abc', '10m 300 80', '5m 900']) {
       expect(() => parseWorkoutText(bad), bad).toThrow(WorkoutSyntaxError);
     }
+  });
+});
+
+describe('custom workout sync', () => {
+  const w = (name: string) => ({ id: 'custom-a', name, description: '', steps: [] });
+  it('newest change wins either way, and tombstones stay dead', () => {
+    const remote = [{ id: 'custom-a', workout: w('server'), updatedAt: '2026-09-28T10:00:00Z' }];
+    const newerLocal = [{ id: 'custom-a', workout: w('local'), updatedAt: '2026-09-28T11:00:00Z' }];
+    expect(mergeCustom(newerLocal, remote)).toMatchObject({ merged: [{ workout: { name: 'local' } }], push: [{ id: 'custom-a' }] });
+    const olderLocal = [{ id: 'custom-a', workout: w('local'), updatedAt: '2026-09-28T09:00:00Z' }];
+    expect(mergeCustom(olderLocal, remote)).toMatchObject({ merged: [{ workout: { name: 'server' } }], push: [] });
+    const deletedRemote = [{ id: 'custom-a', deleted: true, updatedAt: '2026-09-28T12:00:00Z' }];
+    expect(liveWorkouts(mergeCustom(newerLocal, deletedRemote).merged)).toEqual([]);
   });
 });

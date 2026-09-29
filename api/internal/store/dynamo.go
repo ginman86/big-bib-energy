@@ -15,7 +15,8 @@ import (
 // Dynamo is the single-table DynamoDB Store:
 //
 //	pk=ATHLETE#<id>  sk=PROFILE   athlete + Strava tokens
-//	pk=ATHLETE#<id>  sk=RIDE#…    rides (later milestones)
+//	pk=ATHLETE#<id>  sk=RIDE#…    rides
+//	pk=ATHLETE#<id>  sk=WORKOUT#… custom workouts (incl. tombstones)
 //	pk=SESSION#<sha> sk=SESSION   athleteId, ttl
 type Dynamo struct {
 	DB    *dynamodb.Client
@@ -204,4 +205,58 @@ func (d *Dynamo) ListRides(ctx context.Context, athleteID int64, since time.Time
 		}
 		start = res.LastEvaluatedKey
 	}
+}
+
+func workoutSK(id string) string { return "WORKOUT#" + id }
+
+func (d *Dynamo) ListWorkouts(ctx context.Context, athleteID int64) ([]CustomWorkout, error) {
+	var out []CustomWorkout
+	var start map[string]types.AttributeValue
+	for {
+		res, err := d.DB.Query(ctx, &dynamodb.QueryInput{
+			TableName:              &d.Table,
+			KeyConditionExpression: aws.String("pk = :pk AND begins_with(sk, :w)"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":pk": &types.AttributeValueMemberS{Value: athleteKey(athleteID)},
+				":w":  &types.AttributeValueMemberS{Value: "WORKOUT#"},
+			},
+			ExclusiveStartKey: start,
+		})
+		if err != nil {
+			return nil, err
+		}
+		var page []CustomWorkout
+		if err := attributevalue.UnmarshalListOfMaps(res.Items, &page); err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if res.LastEvaluatedKey == nil {
+			return out, nil
+		}
+		start = res.LastEvaluatedKey
+	}
+}
+
+func (d *Dynamo) GetWorkout(ctx context.Context, athleteID int64, id string) (*CustomWorkout, error) {
+	out, err := d.DB.GetItem(ctx, &dynamodb.GetItemInput{TableName: &d.Table, Key: key(athleteKey(athleteID), workoutSK(id)), ConsistentRead: aws.Bool(true)})
+	if err != nil || out.Item == nil {
+		return nil, err
+	}
+	var w CustomWorkout
+	if err := attributevalue.UnmarshalMap(out.Item, &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+func (d *Dynamo) PutWorkout(ctx context.Context, w *CustomWorkout) error {
+	item, err := attributevalue.MarshalMap(w)
+	if err != nil {
+		return err
+	}
+	for k, v := range key(athleteKey(w.AthleteID), workoutSK(w.ID)) {
+		item[k] = v
+	}
+	_, err = d.DB.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.Table, Item: item})
+	return err
 }
