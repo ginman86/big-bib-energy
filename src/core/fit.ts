@@ -85,17 +85,17 @@ const MSG = { fileId: 0, session: 18, lap: 19, record: 20, event: 21, activity: 
 const F = {
   fileId: [[0, 'enum'], [1, 'uint16'], [2, 'uint16'], [3, 'uint32z'], [4, 'uint32']],
   event: [[253, 'uint32'], [0, 'enum'], [1, 'enum']],
-  record: [[253, 'uint32'], [7, 'uint16'], [4, 'uint8'], [3, 'uint8']],
+  record: [[253, 'uint32'], [7, 'uint16'], [4, 'uint8'], [3, 'uint8'], [5, 'uint32'], [6, 'uint16'], [2, 'uint16']],
   lap: [
     [254, 'uint16'], [253, 'uint32'], [0, 'enum'], [1, 'enum'], [2, 'uint32'], [7, 'uint32'], [8, 'uint32'],
     [19, 'uint16'], [20, 'uint16'], [33, 'uint16'], [15, 'uint8'], [16, 'uint8'], [17, 'uint8'], [18, 'uint8'],
-    [24, 'enum'], [25, 'enum'], [39, 'enum'],
+    [24, 'enum'], [25, 'enum'], [39, 'enum'], [9, 'uint32'], [13, 'uint16'], [14, 'uint16'],
   ],
   session: [
     [254, 'uint16'], [253, 'uint32'], [0, 'enum'], [1, 'enum'], [2, 'uint32'], [5, 'enum'], [6, 'enum'],
     [7, 'uint32'], [8, 'uint32'], [20, 'uint16'], [21, 'uint16'], [34, 'uint16'], [35, 'uint16'], [36, 'uint16'],
     [45, 'uint16'], [16, 'uint8'], [17, 'uint8'], [18, 'uint8'], [19, 'uint8'], [25, 'uint16'], [26, 'uint16'],
-    [28, 'enum'],
+    [28, 'enum'], [9, 'uint32'], [14, 'uint16'], [15, 'uint16'], [22, 'uint16'],
   ],
   activity: [[253, 'uint32'], [0, 'uint32'], [1, 'uint16'], [2, 'enum'], [3, 'enum'], [4, 'enum'], [5, 'uint32']],
 } as const satisfies Record<string, readonly Field[]>;
@@ -107,6 +107,13 @@ const EVENT = { timer: 0, session: 8, lap: 9, activity: 26 };
 const EVENT_TYPE = { start: 0, stop: 1, stopAll: 4 };
 const SPORT_CYCLING = 2;
 const SUB_SPORT_INDOOR_CYCLING = 6;
+/** What Zwift writes: Strava shows it as a Virtual Ride, with distance. */
+const SUB_SPORT_VIRTUAL = 58;
+
+// Scales and offsets from the profile.
+const dist = (m?: number) => (m === undefined ? undefined : m * 100);
+const speed = (ms?: number) => (ms === undefined ? undefined : ms * 1000);
+const alt = (m?: number) => (m === undefined ? undefined : (m + 500) * 5);
 
 export interface FitActivity {
   /** Wall-clock ride start (ms since Unix epoch). */
@@ -126,6 +133,9 @@ interface Stats {
   maxHr?: number;
   avgCad?: number;
   maxCad?: number;
+  meters?: number;
+  avgSpeed?: number;
+  maxSpeed?: number;
 }
 
 function stats(samples: Sample[]): Stats {
@@ -143,6 +153,20 @@ function stats(samples: Sample[]): Stats {
     maxHr: max(hr),
     avgCad: avg(cad),
     maxCad: max(cad),
+    ...distanceStats(samples),
+  };
+}
+
+function distanceStats(samples: Sample[]): Pick<Stats, 'meters' | 'avgSpeed' | 'maxSpeed'> {
+  const first = samples[0]?.distance;
+  const last = samples[samples.length - 1]?.distance;
+  if (first === undefined || last === undefined) return {};
+  // Samples mark the start of each second, so the first one's distance is where the block began.
+  const meters = last + (samples[samples.length - 1].speed ?? 0) - first;
+  return {
+    meters,
+    avgSpeed: meters / samples.length,
+    maxSpeed: Math.max(...samples.map((s) => s.speed ?? 0)),
   };
 }
 
@@ -166,10 +190,11 @@ export function encodeFitActivity({ startedAtMs, utcOffsetS, summary, samples }:
   w.data(1, [start, EVENT.timer, EVENT_TYPE.start]);
 
   w.define(2, MSG.record, F.record);
-  for (const s of samples) w.data(2, [at(s.t), s.power, s.cadence, s.heartRate]);
+  for (const s of samples) w.data(2, [at(s.t), s.power, s.cadence, s.heartRate, dist(s.distance), speed(s.speed), alt(s.altitude)]);
 
   w.data(1, [end, EVENT.timer, EVENT_TYPE.stopAll]);
 
+  const sub = summary.course ? SUB_SPORT_VIRTUAL : SUB_SPORT_INDOOR_CYCLING;
   const ridden = laps(summary.segments.map((x) => x.segment), samples);
   w.define(3, MSG.lap, F.lap);
   ridden.forEach((lap, i) => {
@@ -179,7 +204,7 @@ export function encodeFitActivity({ startedAtMs, utcOffsetS, summary, samples }:
     w.data(3, [
       i, lapStart + st.seconds, EVENT.lap, EVENT_TYPE.stop, lapStart, ms, ms,
       st.avgPower, st.maxPower, st.np, st.avgHr, st.maxHr, st.avgCad, st.maxCad,
-      0 /* manual */, SPORT_CYCLING, SUB_SPORT_INDOOR_CYCLING,
+      0 /* manual */, SPORT_CYCLING, sub, dist(st.meters), speed(st.avgSpeed), speed(st.maxSpeed),
     ]);
   });
 
@@ -187,9 +212,10 @@ export function encodeFitActivity({ startedAtMs, utcOffsetS, summary, samples }:
   const ms = samples.length * 1000;
   w.define(4, MSG.session, F.session);
   w.data(4, [
-    0, end, EVENT.session, EVENT_TYPE.stop, start, SPORT_CYCLING, SUB_SPORT_INDOOR_CYCLING, ms, ms,
+    0, end, EVENT.session, EVENT_TYPE.stop, start, SPORT_CYCLING, sub, ms, ms,
     all.avgPower, all.maxPower, summary.normalizedPower, summary.tss * 10, summary.intensityFactor * 1000, summary.ftp,
     all.avgHr, all.maxHr, all.avgCad, all.maxCad, 0, ridden.length, 0 /* activity end */,
+    dist(summary.course?.meters), speed(summary.course?.avgSpeed), speed(summary.course?.maxSpeed), summary.course?.climbMeters,
   ]);
 
   w.define(5, MSG.activity, F.activity);

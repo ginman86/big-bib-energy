@@ -8,18 +8,18 @@ import (
 
 // Athlete is keyed by Strava athlete ID. Strava tokens live only here, server-side.
 type Athlete struct {
-	ID        int64           `dynamodbav:"athleteId"`
-	Firstname string          `dynamodbav:"firstname"`
-	Lastname  string          `dynamodbav:"lastname"`
-	FTP       int             `dynamodbav:"ftp,omitempty"`
-	WeightKg  float64         `dynamodbav:"weightKg,omitempty"`
-	Scopes    string          `dynamodbav:"scopes"`
-	Access    string          `dynamodbav:"stravaAccess"`
-	Refresh   string          `dynamodbav:"stravaRefresh"`
-	ExpiresAt int64           `dynamodbav:"stravaExpiresAt"`
-	Settings  JSONText        `dynamodbav:"settings,omitempty"` // app settings JSON (FTP, LTHR, rider…)
-	CreatedAt time.Time       `dynamodbav:"createdAt"`
-	UpdatedAt time.Time       `dynamodbav:"updatedAt"`
+	ID        int64     `dynamodbav:"athleteId"`
+	Firstname string    `dynamodbav:"firstname"`
+	Lastname  string    `dynamodbav:"lastname"`
+	FTP       int       `dynamodbav:"ftp,omitempty"`
+	WeightKg  float64   `dynamodbav:"weightKg,omitempty"`
+	Scopes    string    `dynamodbav:"scopes"`
+	Access    string    `dynamodbav:"stravaAccess"`
+	Refresh   string    `dynamodbav:"stravaRefresh"`
+	ExpiresAt int64     `dynamodbav:"stravaExpiresAt"`
+	Settings  JSONText  `dynamodbav:"settings,omitempty"` // app settings JSON (FTP, LTHR, rider…)
+	CreatedAt time.Time `dynamodbav:"createdAt"`
+	UpdatedAt time.Time `dynamodbav:"updatedAt"`
 }
 
 // Ride is one completed ride. The .fit file lives in blob storage under FitKey.

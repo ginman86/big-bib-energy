@@ -19,7 +19,8 @@ import { SimulatedTrainer } from './devices/simulated';
 import type { Trainer } from './devices/trainer';
 import { DeviceSlot, renderHome } from './ui/home';
 import { renderRide } from './ui/ride';
-import { appendHistory, loadHistory, loadSettings, saveSettings, Settings } from './ui/storage';
+import { appendHistory, loadHistory, loadSettings, saveSettings, Settings, unitsOf } from './ui/storage';
+import { DEFAULT_COURSE } from './courses';
 import { renderSummary } from './ui/summary';
 
 type Kind = 'trainer' | 'hr';
@@ -181,7 +182,7 @@ async function autoConnect() {
 // ——— Account ———
 
 /** Settings that follow you between devices. Paired devices stay per-browser. */
-const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr, weeklyGoal: s.weeklyGoal });
+const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr, weeklyGoal: s.weeklyGoal, weightKg: s.weightKg, units: s.units });
 
 const progressionOf = (rides: HistoryRide[]) =>
   progression(rides, { weeklyGoal: settings.weeklyGoal, utcOffsetMin: -new Date().getTimezoneOffset(), now: Date.now() });
@@ -323,6 +324,10 @@ function ride(workout: Workout) {
       heartRate,
       avatar: settings.avatar,
       lthr: settings.hr.lthr,
+      course: DEFAULT_COURSE,
+      // Strava's profile weight when the rider hasn't set one here.
+      weightKg: settings.weightKg ?? account?.athlete.weightKg,
+      units: unitsOf(settings),
       onModeChange(mode) {
         settings = { ...settings, mode };
         saveSettings(settings);
@@ -378,6 +383,7 @@ function summary(session: Session, recorder: FactsRecorder) {
       manualUpload: lastRideSimulated,
       lthr: settings.hr.lthr,
       simulated: lastRideSimulated,
+      units: unitsOf(settings),
       onAcceptFtp(ftp) {
         settings = { ...settings, ftp };
         saveSettings(settings);

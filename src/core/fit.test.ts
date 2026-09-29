@@ -2,6 +2,7 @@
 import { Decoder, Stream } from '@garmin/fitsdk';
 import { describe, expect, it } from 'vitest';
 import { encodeFitActivity, fitCrc, fitFileName } from './fit';
+import { bikeModel, Course, VirtualBike } from './course';
 import { Session } from './session';
 import { ramp, repeat, steady, Workout } from './workout';
 
@@ -93,6 +94,28 @@ describe('fit export', () => {
     expect(mm.recordMesgs[0].heartRate).toBeUndefined();
     expect(mm.recordMesgs[0].cadence).toBeUndefined();
     expect(mm.sessionMesgs[0].avgHeartRate).toBeUndefined();
+  });
+
+  it('writes distance, speed and altitude on a course, as a virtual ride', () => {
+    const hill: Course = { id: 'h', name: 'Hill', place: '', lapMeters: 2000, profile: [[0, 100], [1000, 150], [2000, 100]] };
+    const t = new Session(workout, 250);
+    t.bike = new VirtualBike(hill, bikeModel(75));
+    t.start(START);
+    while (t.status === 'running') t.advance(1, { power: 220, cadence: 90 });
+    const sum = t.summary();
+    const mm = decode(encodeFitActivity({ startedAtMs: START, utcOffsetS: 0, summary: sum, samples: t.samples }));
+    const recs = mm.recordMesgs;
+    expect(recs[0].distance).toBe(0);
+    expect(recs[recs.length - 1].distance).toBeCloseTo(t.samples[t.samples.length - 1].distance!, 1);
+    expect(recs[recs.length - 1].altitude).toBeCloseTo(t.samples[t.samples.length - 1].altitude!, 0);
+    expect(recs[100].speed).toBeGreaterThan(3);
+    const sess = mm.sessionMesgs[0];
+    expect(sess.subSport).toBe('virtualActivity');
+    expect(sess.totalDistance).toBeCloseTo(sum.course!.meters, 0);
+    expect(sess.totalAscent).toBe(Math.round(sum.course!.climbMeters));
+    expect(sess.avgSpeed).toBeCloseTo(sum.course!.avgSpeed, 2);
+    const lapTotal = mm.lapMesgs.reduce((a: number, l: { totalDistance: number }) => a + l.totalDistance, 0);
+    expect(lapTotal).toBeCloseTo(sum.course!.meters, -1);
   });
 
   it('uses the standard FIT CRC and a tidy file name', () => {

@@ -1,5 +1,5 @@
 import { encodeFitActivity, fitFileName } from '../core/fit';
-import { clock, pct } from '../core/format';
+import { climbText, clock, distanceText, pct, speedText, Units } from '../core/format';
 import { HR_ZONES, suggestLthr, sustainedMaxHr, timeInHrZones } from '../core/hr';
 import { mean } from '../core/metrics';
 import type { RideSummary, Session } from '../core/session';
@@ -21,6 +21,7 @@ export interface SummaryProps {
   lthr?: number;
   /** Simulated rides show a ramp test result but don't offer it as your FTP. */
   simulated?: boolean;
+  units: Units;
   onAcceptLthr(lthr: number): void;
   onAcceptFtp(ftp: number): void;
   onDone(): void;
@@ -123,7 +124,7 @@ function stravaLine(st: StravaStatus | 'uploading'): string {
 
 export function renderSummary(
   root: HTMLElement,
-  { session, lthr, simulated, onAcceptLthr, onAcceptFtp, onDone, upload, manualUpload, reveal }: SummaryProps,
+  { session, lthr, simulated, units, onAcceptLthr, onAcceptFtp, onDone, upload, manualUpload, reveal }: SummaryProps,
 ): () => void {
   const s = session.summary();
   const scored = s.segments.filter((x) => x.under + x.over + x.compliance > 0);
@@ -142,6 +143,11 @@ export function renderSummary(
         <div>
           <h1>${s.rampTest ? 'Emptied the <em>tank.</em>' : verdict(s.compliance)}</h1>
           <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W${s.intensity ? ` · ridden at ${Math.round(s.intensity * 100)}%` : ''}</div>
+          ${
+            s.course
+              ? `<div class="label course-line">${esc(s.course.name)} · ${distanceText(s.course.meters, units)} · ${climbText(s.course.climbMeters, units)} climbed · ${speedText(s.course.avgSpeed, units)} avg</div>`
+              : ''
+          }
           ${upload ? '<div class="strava-status" data-role="strava-status"></div>' : ''}
         </div>
         ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}

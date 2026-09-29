@@ -26,7 +26,7 @@ type Upload struct {
 	ActivityID int64  `json:"activity_id"`
 }
 
-// Upload sends a FIT file as an indoor ride.
+// Upload sends a FIT file as a virtual (indoor) ride.
 func (c *Client) Upload(ctx context.Context, accessToken string, fit []byte, p UploadParams) (Upload, error) {
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
@@ -34,8 +34,8 @@ func (c *Client) Upload(ctx context.Context, accessToken string, fit []byte, p U
 		"data_type":   "fit",
 		"name":        p.Name,
 		"description": p.Description,
-		"trainer":     "1", // indoor: no GPS
-		"sport_type":  "Ride",
+		"trainer":     "1",           // indoor
+		"sport_type":  "VirtualRide", // distance comes from the virtual course
 		"external_id": p.ExternalID,
 	}
 	for k, v := range fields {

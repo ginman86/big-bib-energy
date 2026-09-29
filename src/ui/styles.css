@@ -1333,6 +1333,52 @@ dialog::backdrop {
   transition: color 400ms;
 }
 
+/* Course strip: lap profile + speed. Same shape as the HR strip. */
+.ride.with-course {
+  grid-template-rows: auto 64px minmax(120px, 1fr) 96px 56px auto auto;
+}
+.course-strip {
+  height: 56px;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 56px;
+  grid-template-columns: 1fr 170px;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+.course-map {
+  position: relative;
+  min-width: 0;
+}
+.course-chart {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.course-name {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  color: var(--text-3);
+}
+.course-readout {
+  display: grid;
+  align-content: center;
+  justify-items: end;
+  gap: 2px;
+}
+.course-readout .speed {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.course-readout .speed .num {
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+}
+
 .hud {
   position: absolute;
   top: 76px;
@@ -1626,6 +1672,9 @@ dialog::backdrop {
   .hr-strip {
     --strip-h: 80px;
   }
+  .ride.with-course {
+    grid-template-rows: auto 48px 180px 80px 56px auto auto;
+  }
   .hero,
   .hero.with-avatar {
     grid-template-columns: 1fr 1fr;
@@ -1686,4 +1735,9 @@ dialog::backdrop {
     grid-template-columns: repeat(3, 1fr);
     row-gap: 20px;
   }
+}
+
+.course-line {
+  margin-top: 6px;
+  color: var(--text-3);
 }

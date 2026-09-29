@@ -1,11 +1,12 @@
 import { LevelFilter, powerLevel } from '../core/avatar';
+import { bikeModel, Course, VirtualBike } from '../core/course';
 import { bandHalfWidth } from '../core/compliance';
 import { ErgGovernor, ErgState } from '../core/erg';
 import { FactsRecorder } from '../core/facts';
 import { hrZoneFor } from '../core/hr';
 import { leadTarget, StepResponse } from '../core/latency';
 import { isFree, segmentAt } from '../core/workout';
-import { clock, pct } from '../core/format';
+import { clock, distanceText, pct, speedUnit, speedValue, Units } from '../core/format';
 import { Session, Snapshot } from '../core/session';
 import type { Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
@@ -15,6 +16,7 @@ import type { ControlMode, Trainer } from '../devices/trainer';
 import { Avatar, Rider } from './avatar';
 import { $, esc, html, setText } from './dom';
 import { drawHrStrip, hrZoneColor } from './hr-chart';
+import { drawCourse } from './course-chart';
 import { drawProfile } from './profile';
 
 export interface RideProps {
@@ -27,6 +29,10 @@ export interface RideProps {
   avatar: Rider | 'off';
   /** Enables HR zones on the HR strip. */
   lthr?: number;
+  /** Virtual course for speed and distance. */
+  course?: Course;
+  weightKg?: number;
+  units: Units;
   onModeChange(mode: ControlMode): void;
   onFinish(session: Session, facts: FactsRecorder): void;
   onQuit(): void;
@@ -46,6 +52,8 @@ const GLIDE_S = 0.2;
 export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const { workout, ftp, trainer } = props;
   const session = new Session(workout, ftp);
+  const { course, units } = props;
+  if (course) session.bike = new VirtualBike(course, bikeModel(props.weightKg));
   const sim = trainer instanceof SimulatedTrainer ? trainer : undefined;
   // A read-only power meter can't hold watts for you.
   let mode: ControlMode = trainer.controllable ? props.mode : 'target';
@@ -56,7 +64,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   let speed = 1;
 
   const page = html(`
-    <main class="ride">
+    <main class="ride${course ? ' with-course' : ''}">
       <header class="ride-head">
         <span class="wordmark">BB<i>/</i>E</span>
         <span class="title">${esc(workout.name)}</span>
@@ -86,6 +94,21 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
           <span class="label" data-f="hrzone">${props.lthr ? '' : 'Set LTHR for zones'}</span>
         </div>
       </section>
+
+      ${
+        course
+          ? `<section class="course-strip">
+              <div class="course-map">
+                <canvas class="course-chart"></canvas>
+                <span class="label course-name">${esc(course.name)} · <span data-f="lap">Lap 1</span></span>
+              </div>
+              <div class="course-readout">
+                <span class="speed"><span class="num" data-f="speed">0.0</span><span class="label">${speedUnit(units)}</span></span>
+                <span class="label"><span data-f="distance">${distanceText(0, units)}</span> · <span data-f="grade">0%</span></span>
+              </div>
+            </section>`
+          : ''
+      }
 
       <aside class="hud" hidden></aside>
 
@@ -142,6 +165,9 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const overview = $<HTMLCanvasElement>(page, '.overview');
   const windowCanvas = $<HTMLCanvasElement>(page, '.window');
   const hrCanvas = $<HTMLCanvasElement>(page, '.hr-chart');
+  const courseCanvas = page.querySelector<HTMLCanvasElement>('.course-chart');
+  const courseFields = course && { speed: f('speed'), distance: f('distance'), grade: f('grade'), lap: f('lap') };
+  let lastCourse = 0;
   const pauseBtn = $<HTMLButtonElement>(page, '[data-role=pause]');
   const skipBtn = $<HTMLButtonElement>(page, '[data-role=skip]');
   const intensityBox = $(page, '[data-role=intensity]');
@@ -484,6 +510,18 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       lthr: props.lthr,
       live: { t: s.elapsed, bpm: s.heartRate },
     });
+    const bike = session.bike;
+    if (bike && courseFields && courseCanvas) {
+      setText(courseFields.speed, speedValue(bike.speed, units).toFixed(1));
+      setText(courseFields.distance, distanceText(bike.distance, units));
+      const g = Math.round(bike.grade * 100);
+      setText(courseFields.grade, `${g > 0 ? '+' : g < 0 ? '−' : ''}${Math.abs(g)}%`);
+      setText(courseFields.lap, `Lap ${bike.lap}`);
+      if (now - lastCourse > 200) {
+        lastCourse = now;
+        drawCourse(courseCanvas, bike.course, bike.distance);
+      }
+    }
     if (now - lastOverview > 500) {
       lastOverview = now;
       drawProfile(overview, { segments: session.segments, ftp, samples: session.samples, elapsed: s.elapsed, scale: session.intensity });

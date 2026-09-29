@@ -1,12 +1,13 @@
 // Setup: everything you set once (FTP, LTHR, weekly goal, defaults, devices, account), in a side
 // sheet so home stays about riding. Home shows only a compact status bar.
 
+import { KG_PER_LB, Units } from '../core/format';
 import { LthrSource, lthrFromMaxHr, maxHrFromAge } from '../core/hr';
 import type { ControlMode } from '../devices/trainer';
 import { asset } from './asset';
 import { $, esc } from './dom';
 import type { DeviceSlot, HomeProps } from './home';
-import type { Settings } from './storage';
+import { Settings, unitsOf } from './storage';
 
 function lthrNote(source?: LthrSource, maxSeen?: number): string {
   const base = {
@@ -82,6 +83,19 @@ export function setupSheet(p: HomeProps, hasBt: boolean): string {
               <button class="btn" data-role="estimate">Estimate</button>
             </div>
           </div>
+        </div>
+        <label class="sheet-row">
+          <span class="label">Weight</span>
+          <span class="sheet-control">
+            <input class="sheet-input num" name="weight" data-role="weight" type="number" min="30" max="400" placeholder="—"
+              value="${s.weightKg ? Math.round(unitsOf(s) === 'imperial' ? s.weightKg / KG_PER_LB : s.weightKg) : ''}" />
+            ${unitsOf(s) === 'imperial' ? 'lb' : 'kg'}
+            <span class="hint">for speed on the course${s.weightKg ? '' : ` · blank uses your Strava weight, or ${unitsOf(s) === 'imperial' ? '165 lb' : '75 kg'}`}</span>
+          </span>
+        </label>
+        <div class="sheet-row">
+          <span class="label">Units</span>
+          <div class="sheet-control">${seg<Units>('units', [['imperial', 'mi · lb'], ['metric', 'km · kg']], unitsOf(s))}</div>
         </div>
         <div class="sheet-row">
           <span class="label">Weekly goal</span>
@@ -159,6 +173,14 @@ export function bindSetup(page: HTMLElement, p: HomeProps): () => void {
     if (maxHr) setHr(lthrFromMaxHr(maxHr), 'max');
     else if (age) setHr(lthrFromMaxHr(maxHrFromAge(age)), 'age');
   });
+  $<HTMLInputElement>(dialog, '[data-role=weight]').addEventListener('change', (e) => {
+    const v = Number((e.target as HTMLInputElement).value);
+    const kg = Math.round((unitsOf(s) === 'imperial' ? v * KG_PER_LB : v) * 10) / 10;
+    if (kg >= 30 && kg <= 180) p.onSettings({ ...s, weightKg: kg });
+  });
+  dialog.querySelectorAll<HTMLButtonElement>('[data-units]').forEach((b) =>
+    b.addEventListener('click', () => p.onSettings({ ...s, units: b.dataset.units as Units })),
+  );
   dialog.querySelectorAll<HTMLButtonElement>('[data-goal]').forEach((b) =>
     b.addEventListener('click', () => p.onWeeklyGoal(s.weeklyGoal + Number(b.dataset.goal))),
   );

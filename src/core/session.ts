@@ -3,6 +3,7 @@
 
 import { accumulate, avgPower, Band, classify, combine, compliance, DEFAULT_TOLERANCE, emptyStats, SegmentStats, Tolerance } from './compliance';
 import { intensityFactor, mean, normalizedPower, trainingStress } from './metrics';
+import type { VirtualBike } from './course';
 import type { RideFacts } from './facts';
 import { FAIL_FRACTION, FAIL_SECONDS, inTestRange, rampTestResult, RampTestResult } from './ramp-test';
 import { expand, isFree, Segment, segmentAt, targetAt, totalDuration, Workout } from './workout';
@@ -20,6 +21,10 @@ export interface Sample {
   target: number;
   cadence?: number;
   heartRate?: number;
+  /** Virtual course position (see core/course): metres, m/s, metres above sea level. */
+  distance?: number;
+  speed?: number;
+  altitude?: number;
 }
 
 export type Status = 'ready' | 'running' | 'paused' | 'finished';
@@ -74,6 +79,8 @@ export interface RideSummary {
   avgCadence?: number;
   segments: SegmentSummary[];
   rampTest?: RampTestResult;
+  /** Virtual course totals, when ridden on one. */
+  course?: { name: string; meters: number; climbMeters: number; avgSpeed: number; maxSpeed: number };
   /** Time-weighted difficulty the rider chose (1 = as written). Absent when never changed. */
   intensity?: number;
 }
@@ -94,6 +101,8 @@ export class Session {
   /** Workout time jumped over with skip(). */
   skippedSeconds = 0;
   elapsed = 0;
+  /** Virtual bike on a course: turns power into distance. Optional; set before starting. */
+  bike?: VirtualBike;
   /** Rider's difficulty: every target is scaled by this. 1 = the workout as written. */
   intensity = 1;
   /** Ride time a ramp test ended early (the rider failed or stopped it). */
@@ -221,10 +230,13 @@ export class Session {
         target: this.targetWatts(this.nextSampleAt),
         cadence: reading.cadence,
         heartRate: reading.heartRate,
+        ...(this.bike && { distance: this.bike.distance, speed: this.bike.speed, altitude: this.bike.elevation }),
       });
       this.nextSampleAt++;
     }
 
+    // After sampling, so a sample holds the course position at its own time.
+    this.bike?.step(reading.power, dt);
     this.elapsed = Math.min(end, this.duration);
     if (this.elapsed >= this.duration) this.finish();
     return this.snapshot();
@@ -273,6 +285,13 @@ export class Session {
       compliance: compliance(combine(this.stats)),
       avgHeartRate: hr.length ? mean(hr) : undefined,
       avgCadence: cad.length ? mean(cad) : undefined,
+      course: this.bike && {
+        name: this.bike.course.name,
+        meters: this.bike.distance,
+        climbMeters: this.bike.climbed,
+        avgSpeed: this.riddenTime > 0 ? this.bike.distance / this.riddenTime : 0,
+        maxSpeed: this.bike.maxSpeed,
+      },
       intensity: this.intensityChanged && this.riddenTime > 0 ? Math.round((this.intensityTime / this.riddenTime) * 100) / 100 : undefined,
       rampTest: rampTestResult(this.workout, this.segments, this.samples, this.testEndedAt),
       segments: this.segments.map((segment, i) => {
