@@ -3,7 +3,15 @@
 
 export type Step =
   | { kind: 'steady'; duration: number; power: number; label?: string }
-  | { kind: 'ramp'; duration: number; from: number; to: number; label?: string };
+  | { kind: 'ramp'; duration: number; from: number; to: number; label?: string }
+  /** No target: the trainer gives a flat road and the rider rides how they like. Not scored. */
+  | { kind: 'free'; duration: number; label?: string };
+
+/**
+ * Nominal intensity for free-ride blocks, used only where a number is unavoidable (TSS estimates,
+ * chart height, zone colour). Scoring, ERG and the ride screen treat free ride as untargeted.
+ */
+export const FREE_NOMINAL = 0.5;
 
 export interface Workout {
   id: string;
@@ -22,6 +30,10 @@ export interface Segment {
   to: number;
   label: string;
 }
+
+export const isFree = (s: { kind: Step['kind'] } | undefined) => s?.kind === 'free';
+
+export const free = (duration: number, label?: string): Step => ({ kind: 'free', duration, label });
 
 export const steady = (duration: number, power: number, label?: string): Step => ({
   kind: 'steady',
@@ -53,8 +65,8 @@ export const minutes = (m: number) => m * 60;
 export function expand(workout: Workout): Segment[] {
   let t = 0;
   return workout.steps.map((step, index) => {
-    const from = step.kind === 'steady' ? step.power : step.from;
-    const to = step.kind === 'steady' ? step.power : step.to;
+    const from = step.kind === 'steady' ? step.power : step.kind === 'ramp' ? step.from : FREE_NOMINAL;
+    const to = step.kind === 'steady' ? step.power : step.kind === 'ramp' ? step.to : FREE_NOMINAL;
     const seg: Segment = {
       index,
       kind: step.kind,
@@ -71,6 +83,7 @@ export function expand(workout: Workout): Segment[] {
 
 function defaultLabel(step: Step): string {
   if (step.kind === 'ramp') return step.to > step.from ? 'Ramp up' : 'Ramp down';
+  if (step.kind === 'free') return 'Free ride';
   return 'Steady';
 }
 

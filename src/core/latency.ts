@@ -1,6 +1,6 @@
 // Measuring and compensating trainer latency.
 
-import { Segment, segmentAt, targetAt } from './workout';
+import { isFree, Segment, segmentAt, targetAt } from './workout';
 
 /** A target change bigger than this (fraction of FTP) is a step, not part of a ramp. */
 const STEP = 0.03;
@@ -13,7 +13,9 @@ const STEP = 0.03;
 export function leadTarget(segments: Segment[], t: number, leadS: number): number | null {
   const cur = segmentAt(segments, t);
   const ahead = segmentAt(segments, t + leadS);
-  if (cur && ahead && ahead.index !== cur.index && Math.abs(ahead.from - cur.to) > STEP) return ahead.from;
+  if (cur && ahead && ahead.index !== cur.index && !isFree(ahead) && !isFree(cur) && Math.abs(ahead.from - cur.to) > STEP) {
+    return ahead.from;
+  }
   return targetAt(segments, t);
 }
 

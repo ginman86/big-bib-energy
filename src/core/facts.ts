@@ -108,9 +108,11 @@ export function computeFacts({ summary, samples, recorder, completed, simulated,
 
   // Blocks the rider actually spent time in (skipped blocks have no scored seconds).
   const ridden = summary.segments.filter((b) => b.under + b.over + b.compliance > 0);
-  const steady20 = ridden.filter((b) => b.segment.from === b.segment.to && b.segment.end - b.segment.start >= 20 * 60);
+  const steady20 = ridden.filter((b) => b.segment.kind === 'steady' && b.segment.end - b.segment.start >= 20 * 60);
   const best = steady20.sort((a, b) => b.compliance - a.compliance)[0];
-  const hard = ridden.filter((b) => b.segment.end - b.segment.start >= 60 && Math.min(b.segment.from, b.segment.to) >= HARD);
+  const hard = ridden.filter(
+    (b) => b.segment.kind !== 'free' && b.segment.end - b.segment.start >= 60 && Math.min(b.segment.from, b.segment.to) >= HARD,
+  );
 
   return {
     v: 1,

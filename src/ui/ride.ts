@@ -4,6 +4,7 @@ import { ErgGovernor, ErgState } from '../core/erg';
 import { FactsRecorder } from '../core/facts';
 import { hrZoneFor } from '../core/hr';
 import { leadTarget, StepResponse } from '../core/latency';
+import { isFree, segmentAt } from '../core/workout';
 import { clock, pct } from '../core/format';
 import { Session, Snapshot } from '../core/session';
 import type { Workout } from '../core/workout';
@@ -311,9 +312,11 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     const reading = trainer.latest();
 
     ergState = undefined;
+    // Free ride has no target: ERG lets go (flat road) and soft-starts again afterwards.
+    const inFree = isFree(segmentAt(session.segments, session.elapsed));
     if (mode === 'erg') {
       const leadW = running ? Math.round((leadTarget(session.segments, session.elapsed, ERG_LEAD_S) ?? 0) * ftp) : targetW;
-      const cmd = erg.update({ nowMs: now, active: running, targetW: leadW, powerW: reading.power, cadence: reading.cadence });
+      const cmd = erg.update({ nowMs: now, active: running && !inFree, targetW: leadW, powerW: reading.power, cadence: reading.cadence });
       if (cmd.kind === 'erg') {
         freeSent = false;
         void trainer.setTargetPower(cmd.watts);
@@ -350,6 +353,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
   function verdict(s: Snapshot, live: boolean, diff: number): string {
     if (!live) return session.status === 'ready' ? 'Ready' : 'Paused';
+    if (s.free) return 'Free ride';
     if (ergState === 'released') return 'Pedal to engage';
     if (ergState === 'ramping') return 'ERG engaging';
     if (s.settling) return 'Settle in';
@@ -398,7 +402,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       lastHud = now;
       renderHud(now);
     }
-    setText(fields.target, String(s.targetW));
+    setText(fields.target, s.free ? '—' : String(s.targetW));
     const diff = Math.round(Math.abs(s.targetW - s.powerW));
     setText(fields.state, verdict(s, live, diff));
 
@@ -427,8 +431,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     setText(fields.segpct, s.settling ? '—' : pct(s.segmentCompliance));
     setText(fields.ridepct, pct(s.totalCompliance));
     if (s.next) {
-      const nextW = Math.round(s.next.from * ftp);
-      setText(fields.next, `${clock(s.next.end - s.next.start)} @ ${nextW} W · in ${clock(s.segmentRemaining)}`);
+      const what = isFree(s.next) ? 'free ride' : `@ ${Math.round(s.next.from * ftp)} W`;
+      setText(fields.next, `${clock(s.next.end - s.next.start)} ${what} · in ${clock(s.segmentRemaining)}`);
       nextBox.classList.toggle('soon', live && s.segmentRemaining <= 10);
     } else {
       setText(fields.next, 'Finish');

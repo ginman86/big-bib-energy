@@ -9,7 +9,7 @@ import { CrankCadence, parseCyclingPower, wahooErg, wahooGrade, wahooSimMode, wa
 import { parseHeartRate, parseIndoorBikeData, setSimulation, setTargetPower } from './ftms';
 import { normalizedPower, trainingStress } from './metrics';
 import { Session } from './session';
-import { expand, ramp, repeat, steady, targetAt, totalDuration, Workout } from './workout';
+import { expand, free, ramp, repeat, steady, targetAt, totalDuration, Workout } from './workout';
 import { zoneFor } from './zones';
 
 const workout: Workout = {
@@ -370,5 +370,21 @@ describe('strava activity text', () => {
     expect(d).toContain('Dialled in.');
     expect(d).toMatch(/NP \d+ W · TSS \d+ · IF \d\.\d\d · avg HR 150/);
     expect(d).toContain('bigbib.ginman.dev');
+  });
+});
+
+describe('free ride', () => {
+  const w: Workout = { id: 'f', name: 'f', description: '', steps: [steady(60, 1.0), free(60), steady(60, 1.0)] };
+
+  it('is not scored, is flagged on the snapshot, and never gets an ERG lead', () => {
+    const s = new Session(w, 200);
+    s.start();
+    s.skip(); // into free ride
+    for (let i = 0; i < 20; i++) s.advance(1, { power: 50 });
+    expect(s.snapshot().free).toBe(true);
+    expect(s.stats[1].seconds).toBe(0);
+    const segs = expand(w);
+    expect(leadTarget(segs, 59.5, 1)).toBe(1.0); // steady → free: no lead
+    expect(leadTarget(segs, 119.5, 1)).toBe(0.5); // free → steady: stay on the free nominal
   });
 });

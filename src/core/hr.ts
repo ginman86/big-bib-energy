@@ -74,7 +74,7 @@ export function suggestLthr(
 ): LthrSuggestion | undefined {
   const estimates: number[] = [];
   for (const { segment: s, compliance } of blocks) {
-    const steady = s.from === s.to;
+    const steady = s.kind === 'steady';
     if (!steady || s.end - s.start < 8 * 60 || s.from < 0.88 || compliance < 0.7) continue;
     const mid = (s.start + s.end) / 2;
     const hr = samples.filter((x) => x.t >= mid && x.t < s.end && x.heartRate).map((x) => x.heartRate!);

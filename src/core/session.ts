@@ -4,7 +4,7 @@
 import { accumulate, avgPower, Band, classify, combine, compliance, DEFAULT_TOLERANCE, emptyStats, SegmentStats, Tolerance } from './compliance';
 import { intensityFactor, mean, normalizedPower, trainingStress } from './metrics';
 import type { RideFacts } from './facts';
-import { expand, Segment, segmentAt, targetAt, totalDuration, Workout } from './workout';
+import { expand, isFree, Segment, segmentAt, targetAt, totalDuration, Workout } from './workout';
 
 export interface Reading {
   power: number;
@@ -35,6 +35,8 @@ export interface Snapshot {
   band: Band;
   /** In the grace window after a target change; time isn't scored. */
   settling: boolean;
+  /** A free-ride block: no target, not scored. */
+  free: boolean;
   cadence?: number;
   heartRate?: number;
   segmentCompliance: number;
@@ -157,7 +159,7 @@ export class Session {
     if (!coasting) this.window.push({ t: this.elapsed, power: reading.power });
     while (this.window.length && this.window[0].t < this.elapsed - SMOOTHING_SECONDS) this.window.shift();
 
-    if (seg && !unscored && !this.isSettling(seg)) {
+    if (seg && !unscored && !isFree(seg) && !this.isSettling(seg)) {
       const band = classify(this.smoothedPower(), targetW, this.tolerance);
       accumulate(this.stats[seg.index], band, reading.power, targetW, dt);
     }
@@ -194,6 +196,7 @@ export class Session {
       powerW,
       band: classify(powerW, targetW, this.tolerance),
       settling: this.unscored || (seg ? this.isSettling(seg) : false),
+      free: isFree(seg),
       cadence: this.last.cadence,
       heartRate: this.last.heartRate,
       segmentCompliance: seg ? compliance(this.stats[seg.index]) : 0,

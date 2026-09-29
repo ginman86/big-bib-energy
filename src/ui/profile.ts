@@ -42,6 +42,27 @@ function colors(): Palette {
   return palette;
 }
 
+/** Diagonal stripes for free-ride blocks: there's no target to draw. */
+let hatchCache: { ctx: CanvasRenderingContext2D; pattern: CanvasPattern } | undefined;
+function hatch(ctx: CanvasRenderingContext2D, c: Palette): CanvasPattern | string {
+  if (hatchCache?.ctx === ctx) return hatchCache.pattern;
+  const tile = document.createElement('canvas');
+  tile.width = tile.height = 8;
+  const t = tile.getContext('2d')!;
+  t.fillStyle = c.zones[0];
+  t.fillRect(0, 0, 8, 8);
+  t.strokeStyle = c.zones[3];
+  t.lineWidth = 1.5;
+  t.beginPath();
+  t.moveTo(-2, 10);
+  t.lineTo(10, -2);
+  t.stroke();
+  const pattern = ctx.createPattern(tile, 'repeat');
+  if (!pattern) return c.zones[0];
+  hatchCache = { ctx, pattern };
+  return pattern;
+}
+
 /** Sizes the backing store to the element's CSS size × devicePixelRatio. */
 export function prepare(canvas: HTMLCanvasElement) {
   const dpr = window.devicePixelRatio || 1;
@@ -82,7 +103,7 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
     const current = elapsed !== undefined && elapsed >= s.start && elapsed < s.end;
     const zone = zoneFor((s.from + s.to) / 2);
     ctx.globalAlpha = (past ? 0.45 : 1) * (detailed && !current ? 0.6 : 1);
-    ctx.fillStyle = c.zones[zone.id - 1];
+    ctx.fillStyle = s.kind === 'free' ? hatch(ctx, c) : c.zones[zone.id - 1];
     ctx.beginPath();
     ctx.moveTo(x(s.start), y(0));
     ctx.lineTo(x(s.start), y(s.from * ftp));
@@ -91,7 +112,11 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
     ctx.closePath();
     ctx.fill();
 
-    // Top edge: the target line.
+    // Top edge: the target line (free ride has none).
+    if (s.kind === 'free') {
+      ctx.globalAlpha = 1;
+      continue;
+    }
     ctx.strokeStyle = current ? c.text : c.text3;
     ctx.lineWidth = current ? 1.5 : 1;
     ctx.beginPath();
@@ -105,6 +130,7 @@ export function drawProfile(canvas: HTMLCanvasElement, opts: ProfileOptions) {
   if (detailed) {
     ctx.fillStyle = 'rgba(236,232,223,0.07)';
     for (const s of segments) {
+      if (s.kind === 'free') continue;
       const a = Math.max(s.start, t0, elapsed ?? t0);
       const b = Math.min(s.end, t1);
       if (b <= a) continue;
