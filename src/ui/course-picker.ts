@@ -24,8 +24,8 @@ export interface CoursePickerProps {
 function previewSvg(m: CourseMeta): string {
   const lo = Math.min(...m.preview);
   const hi = Math.max(...m.preview);
-  // Scale like the ride strip: at least 40 m of range so flat courses look flat.
-  const span = Math.max(40, hi - lo);
+  // At least 120 m of range, so small hills stay small next to real climbs.
+  const span = Math.max(120, hi - lo);
   const w = 200;
   const h = 44;
   const pts = m.preview.map((e, i) => `${((i / (m.preview.length - 1)) * w).toFixed(1)},${(h - 2 - ((e - lo) / span) * (h - 6)).toFixed(1)}`);
@@ -39,7 +39,7 @@ function card(m: CourseMeta, selected: boolean, units: Units): string {
     `${climbText(m.climbMeters, units)} ↑`,
     m.maxGrade >= 0.02 ? `max ${Math.round(m.maxGrade * 100)}%` : '',
   ].filter(Boolean);
-  const tags = [m.terrain, m.kind === 'out-and-back' ? 'Out & back' : '', m.altitudeM >= 1000 ? `${climbText(m.altitudeM, units)} up` : ''].filter(Boolean);
+  const tags = [m.terrain, m.kind === 'out-and-back' ? 'Out & back' : '', m.altitudeM >= 1000 ? `${climbText(m.altitudeM, units).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} altitude` : ''].filter(Boolean);
   return `
     <li class="course-card${selected ? ' selected' : ''}">
       <button class="course-pick" data-course="${esc(m.id)}" aria-pressed="${selected}">
