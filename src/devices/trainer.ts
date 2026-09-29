@@ -18,8 +18,12 @@ export interface Trainer {
   latest(): Reading;
   /** ERG: the trainer holds these watts. */
   setTargetPower(watts: number): Promise<void>;
-  /** Target mode: fixed virtual road; the rider must produce the watts. */
-  setGrade(gradePct: number): Promise<void>;
+  /**
+   * Simulation: a virtual road of this grade; the rider must produce the watts. Target mode holds a
+   * flat road; free ride follows the course. `massKg` (rider + bike) makes climbs feel right on
+   * trainers that model it.
+   */
+  setGrade(gradePct: number, sim?: { massKg?: number }): Promise<void>;
   /** Bluetooth link state; absent for the simulator (always "connected"). */
   readonly connection?: 'connected' | 'reconnecting' | 'disconnected';
   /** Data notification rate and freshness (real devices only), for the latency HUD. */

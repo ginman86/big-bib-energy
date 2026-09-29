@@ -79,8 +79,10 @@ export interface RideSummary {
   avgCadence?: number;
   segments: SegmentSummary[];
   rampTest?: RampTestResult;
+  /** Ridden as a free ride (no targets): compliance means nothing here. */
+  freeRide?: boolean;
   /** Virtual course totals, when ridden on one. */
-  course?: { name: string; meters: number; climbMeters: number; avgSpeed: number; maxSpeed: number };
+  course?: { name: string; meters: number; climbMeters: number; avgSpeed: number; maxSpeed: number; lapMeters?: number };
   /** Time-weighted difficulty the rider chose (1 = as written). Absent when never changed. */
   intensity?: number;
 }
@@ -103,6 +105,8 @@ export class Session {
   elapsed = 0;
   /** Virtual bike on a course: turns power into distance. Optional; set before starting. */
   bike?: VirtualBike;
+  /** A free ride's goal (distance or laps) was reached: the ride counts as finished. */
+  goalReached = false;
   /** Rider's difficulty: every target is scaled by this. 1 = the workout as written. */
   intensity = 1;
   /** Ride time a ramp test ended early (the rider failed or stopped it). */
@@ -144,7 +148,7 @@ export class Session {
 
   /** Reached the end of the workout without skipping more than 5% of it (not ended early). */
   get completed(): boolean {
-    return this.elapsed >= this.duration - 0.5 && this.skippedSeconds <= this.duration * 0.05;
+    return this.goalReached || (this.elapsed >= this.duration - 0.5 && this.skippedSeconds <= this.duration * 0.05);
   }
 
   targetWatts(t = this.elapsed): number {
@@ -227,7 +231,8 @@ export class Session {
       this.samples.push({
         t: this.nextSampleAt,
         power: reading.power,
-        target: this.targetWatts(this.nextSampleAt),
+        // Free ride has no target; 0 marks that for charts and exports.
+        target: isFree(segmentAt(this.segments, this.nextSampleAt)) ? 0 : this.targetWatts(this.nextSampleAt),
         cadence: reading.cadence,
         heartRate: reading.heartRate,
         ...(this.bike && { distance: this.bike.distance, speed: this.bike.speed, altitude: this.bike.elevation }),
@@ -291,8 +296,10 @@ export class Session {
         climbMeters: this.bike.climbed,
         avgSpeed: this.riddenTime > 0 ? this.bike.distance / this.riddenTime : 0,
         maxSpeed: this.bike.maxSpeed,
+        lapMeters: this.bike.course.lapMeters,
       },
       intensity: this.intensityChanged && this.riddenTime > 0 ? Math.round((this.intensityTime / this.riddenTime) * 100) / 100 : undefined,
+      freeRide: this.workout.freeRide || undefined,
       rampTest: rampTestResult(this.workout, this.segments, this.samples, this.testEndedAt),
       segments: this.segments.map((segment, i) => {
         const s = this.stats[i];

@@ -23,7 +23,7 @@ export interface ProfileOptions {
   scale?: number;
 }
 
-type Palette = Record<'text' | 'text2' | 'text3' | 'line' | 'accent' | Band, string> & { zones: string[] };
+type Palette = Record<'text' | 'text2' | 'text3' | 'line' | 'accent' | Band | 'free', string> & { zones: string[] };
 
 let palette: Palette | undefined;
 function colors(): Palette {
@@ -37,6 +37,7 @@ function colors(): Palette {
     line: v('--line-strong'),
     accent: v('--accent'),
     on: v('--on'),
+    free: v('--text'),
     under: v('--under'),
     over: v('--over'),
     zones: [1, 2, 3, 4, 5, 6, 7].map((z) => v(`--z${z}`)),
@@ -200,11 +201,12 @@ function drawTrace(
   const pts = samples.map((s, i) => {
     const win = samples.slice(Math.max(0, i - 2), i + 1);
     const p = win.reduce((a, w) => a + w.power, 0) / win.length;
-    return { t: s.t, p, band: classify(p, s.target, tol) };
+    // No target (free ride): a neutral trace, not "over".
+    return { t: s.t, p, band: s.target > 0 ? classify(p, s.target, tol) : ('free' as const) };
   });
   // live.power is already 3 s smoothed by the session.
   if (live && (!pts.length || live.t > pts[pts.length - 1].t)) {
-    pts.push({ t: live.t, p: live.power, band: classify(live.power, live.target, tol) });
+    pts.push({ t: live.t, p: live.power, band: live.target > 0 ? classify(live.power, live.target, tol) : ('free' as const) });
   }
   if (pts.length < 2) return;
   ctx.lineWidth = 2;

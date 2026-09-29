@@ -97,10 +97,14 @@ export abstract class BluetoothTrainer implements Trainer {
     await this.sendErg(watts);
   }
 
-  async setGrade(gradePct: number) {
+  async setGrade(gradePct: number, sim?: { massKg?: number }) {
+    if (sim?.massKg) this.massKg = sim.massKg;
     this.lastControl = { kind: 'grade', pct: gradePct };
     await this.sendGrade(gradePct);
   }
+
+  /** Rider + bike, for trainers whose simulation takes a weight. */
+  protected massKg = 83;
 
   latest(): Reading {
     // Don't freeze on the last number if the trainer has gone quiet.
@@ -227,6 +231,7 @@ class WahooTrainer extends CyclingPowerTrainer {
   readonly protocol = 'Wahoo';
   readonly controllable = true;
   private mode: 'erg' | 'sim' | undefined;
+  private simMass = 0;
   private lastPowerCmd = -1;
 
   protected async init(server: BluetoothRemoteGATTServer) {
@@ -256,10 +261,11 @@ class WahooTrainer extends CyclingPowerTrainer {
   }
 
   protected async sendGrade(gradePct: number) {
-    // Leaving ERG requires re-entering sim mode before a grade is accepted.
-    if (this.mode !== 'sim') {
+    // Leaving ERG requires re-entering sim mode before a grade is accepted (and a new weight needs it too).
+    if (this.mode !== 'sim' || this.simMass !== this.massKg) {
       this.mode = 'sim';
-      await this.write(wahooSimMode());
+      this.simMass = this.massKg;
+      await this.write(wahooSimMode({ weightKg: this.massKg }));
     }
     this.lastPowerCmd = -1;
     await this.write(wahooGrade(gradePct));

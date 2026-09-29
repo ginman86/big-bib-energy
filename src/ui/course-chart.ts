@@ -130,3 +130,123 @@ export function drawRoute(canvas: HTMLCanvasElement, course: Course, distance: n
   ctx.fill();
   ctx.stroke();
 }
+
+// ——— Road ahead (free ride's main chart) ———
+
+const BEHIND_M = 250;
+const AHEAD_M = 1750;
+
+let roadPalette: { zones: string[]; text: string; text2: string; text3: string; accent: string; line: string } | undefined;
+function roadColors() {
+  if (!roadPalette) {
+    const css = getComputedStyle(document.documentElement);
+    const v = (n: string) => css.getPropertyValue(n).trim();
+    roadPalette = { zones: [1, 2, 3, 4, 5, 6, 7].map((z) => v(`--z${z}`)), text: v('--text'), text2: v('--text-2'), text3: v('--text-3'), accent: v('--accent'), line: v('--line-strong') };
+  }
+  return roadPalette;
+}
+
+/** Steeper is redder: flat and descents stay neutral, climbs deepen through the one accent colour. */
+function gradeFill(g: number, c: ReturnType<typeof roadColors>): { color: string; alpha: number } {
+  if (g < 0.02) return { color: c.line, alpha: 1 };
+  if (g < 0.04) return { color: c.accent, alpha: 0.3 };
+  if (g < 0.07) return { color: c.accent, alpha: 0.5 };
+  if (g < 0.1) return { color: c.accent, alpha: 0.72 };
+  return { color: c.accent, alpha: 0.95 };
+}
+
+/** The next ~2 km of road: elevation shaded by grade, climbs named, the rider on it. */
+export function drawRoadAhead(canvas: HTMLCanvasElement, course: Course, distance: number, units: 'metric' | 'imperial') {
+  const { ctx, width, height } = prepare(canvas);
+  const c = roadColors();
+  const d0 = distance - BEHIND_M;
+  const d1 = distance + AHEAD_M;
+  const step = 10;
+  const pts: [number, number][] = [];
+  for (let d = d0; d <= d1; d += step) pts.push([d, elevationAt(course, d)]);
+  const els = pts.map((p) => p[1]);
+  const lo = Math.min(...els);
+  const hi = Math.max(...els);
+  // Keep at least 30 m of vertical range so flat roads read as flat; leave room for labels.
+  const span = Math.max(30, (hi - lo) * 1.15);
+  const top = 28;
+  const bottom = 22;
+  const base = lo - (span - (hi - lo)) / 2;
+  const x = (d: number) => ((d - d0) / (d1 - d0)) * width;
+  const y = (e: number) => height - bottom - ((e - base) / span) * (height - top - bottom);
+
+  // Road surface, one slice per step, coloured by its grade; the part behind the rider dimmed.
+  for (let i = 1; i < pts.length; i++) {
+    const [da, ea] = pts[i - 1];
+    const [db, eb] = pts[i];
+    const fill = gradeFill((eb - ea) / (db - da), c);
+    ctx.globalAlpha = fill.alpha * (db <= distance ? 0.35 : 1);
+    ctx.fillStyle = fill.color;
+    ctx.beginPath();
+    ctx.moveTo(x(da), height - bottom);
+    ctx.lineTo(x(da), y(ea));
+    ctx.lineTo(x(db), y(eb));
+    ctx.lineTo(x(db), height - bottom);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Road edge.
+  ctx.strokeStyle = c.text2;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  pts.forEach(([d, e], i) => (i ? ctx.lineTo(x(d), y(e)) : ctx.moveTo(x(d), y(e))));
+  ctx.stroke();
+
+  ctx.font = '600 11px Barlow, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+
+  // Distance ticks ahead: every 0.25 mi or 500 m.
+  const tick = units === 'imperial' ? 402.336 : 500;
+  ctx.fillStyle = c.text3;
+  ctx.textAlign = 'center';
+  for (let k = 1; k * tick <= AHEAD_M; k++) {
+    const d = distance + k * tick;
+    ctx.fillRect(x(d), height - bottom, 1, 5);
+    const label = units === 'imperial' ? `${(k * 0.25).toFixed(2).replace(/0$/, '')} mi` : `${(k * 0.5).toFixed(1)} km`;
+    ctx.fillText(label, x(d), height - 5);
+  }
+
+  // Climb names where they start in view (this lap or the next).
+  ctx.textAlign = 'left';
+  for (const cl of course.climbs ?? []) {
+    for (const lapStart of [Math.floor(distance / course.lapMeters) * course.lapMeters, (Math.floor(distance / course.lapMeters) + 1) * course.lapMeters]) {
+      const s = lapStart + cl.start;
+      const e = lapStart + cl.end;
+      if (e < d0 || s > d1) continue;
+      const sx = Math.max(4, x(s));
+      ctx.strokeStyle = c.text3;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x(s), 16);
+      ctx.lineTo(x(s), y(elevationAt(course, s)));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = c.text2;
+      ctx.fillText(`${cl.name.toUpperCase()} · ${Math.round(cl.avgGrade * 100)}%`, sx + 4, 14);
+    }
+  }
+
+  // The rider.
+  const rx = x(distance);
+  const ry = y(elevationAt(course, distance));
+  ctx.strokeStyle = c.accent;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(rx, top - 6);
+  ctx.lineTo(rx, height - bottom);
+  ctx.stroke();
+  ctx.fillStyle = c.accent;
+  ctx.beginPath();
+  ctx.arc(rx, ry, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = c.text;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}

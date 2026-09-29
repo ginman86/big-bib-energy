@@ -3,6 +3,7 @@
 
 import type { RideRecord } from '../core/history';
 import { defaultUnits, Units } from '../core/format';
+import type { FreeRideGoal } from '../core/free-ride';
 import type { HrProfile } from '../core/hr';
 import type { ControlMode } from '../devices/trainer';
 import type { Rider } from './avatar';
@@ -16,6 +17,8 @@ export interface Settings {
   weeklyGoal: number;
   /** Rider weight for virtual speed on the course (bike weight is added). */
   weightKg?: number;
+  /** Last free-ride goal, so the next one starts the same way. */
+  freeRideGoal?: FreeRideGoal;
   /** Course for rides: a built-in or imported course ID, or 'random'. */
   courseId?: string;
   /** Distance, speed and weight units; defaults from the browser's locale. */

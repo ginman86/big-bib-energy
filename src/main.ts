@@ -23,6 +23,7 @@ import { appendHistory, loadHistory, loadSettings, saveSettings, Settings, units
 import { CATALOG, DEFAULT_COURSE_ID, loadBuiltinCourse, metaOf } from './courses';
 import { deleteCourse, localCourses, saveCourse, syncCourses } from './api/courses';
 import { importGpx } from './core/gpx';
+import { FreeRideGoal, freeRideWorkout } from './core/free-ride';
 import type { Course } from './core/course';
 import { SURPRISE } from './ui/course-picker';
 import { renderSummary } from './ui/summary';
@@ -374,6 +375,11 @@ function home() {
       onSetup(open) {
         setupOpen = open;
       },
+      onFreeRide(goal) {
+        settings = { ...settings, freeRideGoal: goal };
+        saveSettings(settings);
+        void ride(freeRideWorkout(goal), goal);
+      },
       course: {
         courses: courseMetas(),
         courseId: settings.courseId ?? DEFAULT_COURSE_ID,
@@ -400,7 +406,7 @@ function home() {
   );
 }
 
-async function ride(workout: Workout) {
+async function ride(workout: Workout, goal?: FreeRideGoal) {
   const course = await resolveCourse();
   const trainer: Trainer = realTrainer ?? new SimulatedTrainer(settings.ftp);
   lastRideSimulated = trainer.simulated;
@@ -416,6 +422,7 @@ async function ride(workout: Workout) {
       course,
       courses: courseMetas(),
       loadCourse: resolveCourse,
+      goal,
       // Strava's profile weight when the rider hasn't set one here.
       weightKg: settings.weightKg ?? account?.athlete.weightKg,
       units: unitsOf(settings),

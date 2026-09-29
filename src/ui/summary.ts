@@ -3,6 +3,7 @@ import { climbText, clock, distanceText, pct, speedText, Units } from '../core/f
 import { HR_ZONES, suggestLthr, sustainedMaxHr, timeInHrZones } from '../core/hr';
 import { mean } from '../core/metrics';
 import type { RideSummary, Session } from '../core/session';
+import { lapsRidden } from '../core/activity-text';
 import { asset } from './asset';
 import { $, esc, html } from './dom';
 import type { StravaStatus } from '../api/uploads';
@@ -97,6 +98,13 @@ function rampSection(s: RideSummary, simulated?: boolean): string {
     </section>`;
 }
 
+function freeRideHeadline(s: RideSummary): string {
+  const laps = lapsRidden(s);
+  if (laps >= 2) return `${laps} laps <em>done.</em>`;
+  if (laps === 1) return `Lap <em>done.</em>`;
+  return `Out on the <em>road.</em>`;
+}
+
 /** Hold the line this well and you've earned the flaming bibs. */
 const CREST_COMPLIANCE = 0.9;
 
@@ -141,7 +149,7 @@ export function renderSummary(
 
       <section class="summary-head">
         <div>
-          <h1>${s.rampTest ? 'Emptied the <em>tank.</em>' : verdict(s.compliance)}</h1>
+          <h1>${s.rampTest ? 'Emptied the <em>tank.</em>' : s.freeRide ? freeRideHeadline(s) : verdict(s.compliance)}</h1>
           <div class="label">${esc(s.workoutName)} · FTP ${s.ftp} W${s.intensity ? ` · ridden at ${Math.round(s.intensity * 100)}%` : ''}</div>
           ${
             s.course
@@ -150,7 +158,7 @@ export function renderSummary(
           }
           ${upload ? '<div class="strava-status" data-role="strava-status"></div>' : ''}
         </div>
-        ${s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}
+        ${!s.freeRide && s.compliance >= CREST_COMPLIANCE ? `<img class="crest" src="${asset('brand/crest.jpg')}" alt="Big Bib Energy — earned" />` : ''}
       </section>
 
       ${rampSection(s, simulated)}
@@ -158,7 +166,12 @@ export function renderSummary(
       ${reveal ? xpReveal(reveal) : ''}
 
       <section class="kpis">
-        <div class="hero-kpi"><span class="label">On target</span><span class="num">${pct(s.compliance)}</span></div>
+        ${
+          s.freeRide && s.course
+            ? `<div class="hero-kpi"><span class="label">Distance</span><span class="num">${distanceText(s.course.meters, units)}</span></div>
+               <div><span class="label">Climbed</span><span class="num">${climbText(s.course.climbMeters, units)}</span></div>`
+            : `<div class="hero-kpi"><span class="label">On target</span><span class="num">${pct(s.compliance)}</span></div>`
+        }
         <div><span class="label">Time</span><span class="num">${clock(s.seconds)}</span></div>
         <div><span class="label">Avg power</span><span class="num">${Math.round(s.avgPower)}</span></div>
         <div><span class="label">Norm. power</span><span class="num">${Math.round(s.normalizedPower)}</span></div>
@@ -170,7 +183,7 @@ export function renderSummary(
 
       ${hrSection(session, lthr, s.segments)}
 
-      <table class="intervals">
+      <table class="intervals"${s.freeRide ? ' hidden' : ''}>
         <thead>
           <tr>
             <th class="label">Block</th>

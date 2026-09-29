@@ -5,7 +5,8 @@ import { hrZoneFor } from './hr';
 import type { RideSummary, Sample } from './session';
 import { zoneFor, ZONES } from './zones';
 
-export type Mode = 'erg' | 'target';
+/** How targets were held: the trainer (ERG), the rider (Target), or no targets at all (free ride). */
+export type Mode = 'erg' | 'target' | 'free';
 
 export interface RideFacts {
   /** Bumped when facts gain fields, so rules can tell old rides apart. */
@@ -38,7 +39,7 @@ export interface RideFacts {
  * it detects transitions itself so callers don't have to.
  */
 export class FactsRecorder {
-  private modeSeconds: Record<Mode, number> = { erg: 0, target: 0 };
+  private modeSeconds: Record<Mode, number> = { erg: 0, target: 0, free: 0 };
   maxAvatarLevel = 1;
   pauses = 0;
   ergReleases = 0;
@@ -72,7 +73,9 @@ export class FactsRecorder {
   }
 
   get mode(): Mode {
-    return this.modeSeconds.target > this.modeSeconds.erg ? 'target' : 'erg';
+    const s = this.modeSeconds;
+    if (s.free > s.erg && s.free > s.target) return 'free';
+    return s.target > s.erg ? 'target' : 'erg';
   }
 }
 

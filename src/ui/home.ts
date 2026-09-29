@@ -1,4 +1,5 @@
-import { hoursMinutes } from '../core/format';
+import { hoursMinutes, Units } from '../core/format';
+import type { FreeRideGoal } from '../core/free-ride';
 import { monthTotals } from '../core/history';
 import { normalizedPower, trainingStress } from '../core/metrics';
 import type { HistoryRide, Progression } from '../core/progression';
@@ -7,7 +8,7 @@ import { zoneFor } from '../core/zones';
 import { bluetoothAvailable } from '../devices/bluetooth-trainer';
 import { LIBRARY } from '../workouts/library';
 import { asset } from './asset';
-import { $, esc, html } from './dom';
+import { $, esc, html, setText } from './dom';
 import { drawProfile } from './profile';
 import { patchWall, powerBlock, statsLine } from './progress';
 import { bindCoursePicker, courseChipLabel, coursePicker, CoursePickerProps } from './course-picker';
@@ -83,6 +84,46 @@ export interface HomeProps {
   onSetup(open: boolean): void;
   /** Course picker (dialog opened from the status bar). */
   course: CoursePickerProps;
+  onFreeRide(goal: FreeRideGoal): void;
+}
+
+const M_PER_MI = 1609.344;
+type GoalKind = FreeRideGoal['kind'];
+/** The number shown in the goal box, in the rider's units. */
+function goalValue(g: FreeRideGoal, units: Units): number {
+  if (g.kind === 'time') return Math.round(g.seconds / 60);
+  if (g.kind === 'distance') return Math.round((g.meters / (units === 'imperial' ? M_PER_MI : 1000)) * 10) / 10;
+  if (g.kind === 'laps') return g.laps;
+  return 0;
+}
+const GOAL_DEFAULT: Record<GoalKind, (u: Units) => number> = { open: () => 0, time: () => 60, distance: (u) => (u === 'imperial' ? 12 : 20), laps: () => 3 };
+const goalUnit = (k: GoalKind, u: Units) => (k === 'time' ? 'min' : k === 'distance' ? (u === 'imperial' ? 'mi' : 'km') : k === 'laps' ? 'laps' : '');
+function toGoal(k: GoalKind, v: number, u: Units): FreeRideGoal {
+  if (!(v > 0)) return { kind: 'open' };
+  if (k === 'time') return { kind: 'time', seconds: Math.round(v * 60) };
+  if (k === 'distance') return { kind: 'distance', meters: v * (u === 'imperial' ? M_PER_MI : 1000) };
+  if (k === 'laps') return { kind: 'laps', laps: Math.max(1, Math.round(v)) };
+  return { kind: 'open' };
+}
+
+function freeRidePanel(p: HomeProps, units: Units): string {
+  const g = p.settings.freeRideGoal ?? { kind: 'open' };
+  const kinds: [GoalKind, string][] = [['open', 'Open'], ['time', 'Time'], ['distance', 'Distance'], ['laps', 'Laps']];
+  return `
+    <section class="free-ride-panel">
+      <div class="fr-text">
+        <h2>Free ride</h2>
+        <p class="hint">No workout. Ride ${esc(courseChipLabel(p.course))} and the trainer follows the road: climbs get hard, descents easy.</p>
+      </div>
+      <div class="fr-goal" data-kind="${g.kind}">
+        <div class="seg">${kinds.map(([k, l]) => `<button data-goal-kind="${k}" aria-pressed="${k === g.kind}">${l}</button>`).join('')}</div>
+        <span class="fr-value">
+          <input class="sheet-input num" data-role="goal-value" type="number" min="1" step="any" value="${g.kind === 'open' ? '' : goalValue(g, units)}" aria-label="Goal" />
+          <span class="label" data-role="goal-unit">${goalUnit(g.kind, units)}</span>
+        </span>
+      </div>
+      <button class="btn primary" data-role="free-ride">Ride</button>
+    </section>`;
 }
 
 function estimate(w: Workout, ftp: number) {
@@ -131,6 +172,8 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
             </div>`
           : ''
       }
+
+      ${freeRidePanel(props, props.course.units)}
 
       <section class="library-head">
         <span class="label">Workouts</span>
@@ -265,6 +308,22 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   page.querySelector('[data-role=dismiss-ftp]')?.addEventListener('click', () => props.onDismissFtp());
   const unbindSetup = bindSetup(page, props);
   const unbindCourses = bindCoursePicker(page, props.course);
+
+  // Free ride goal: pick a kind, type a number, ride.
+  const goalBox = $(page, '.fr-goal');
+  const goalInput = $<HTMLInputElement>(page, '[data-role=goal-value]');
+  let goalKind = (goalBox.dataset.kind ?? 'open') as GoalKind;
+  page.querySelectorAll<HTMLButtonElement>('[data-goal-kind]').forEach((b) =>
+    b.addEventListener('click', () => {
+      goalKind = b.dataset.goalKind as GoalKind;
+      goalBox.dataset.kind = goalKind;
+      page.querySelectorAll('[data-goal-kind]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      goalInput.value = goalKind === 'open' ? '' : String(GOAL_DEFAULT[goalKind](props.course.units));
+      setText($(page, '[data-role=goal-unit]'), goalUnit(goalKind, props.course.units));
+      if (goalKind !== 'open') goalInput.focus();
+    }),
+  );
+  $(page, '[data-role=free-ride]').addEventListener('click', () => props.onFreeRide(toGoal(goalKind, Number(goalInput.value), props.course.units)));
   $(page, '[data-role=open-courses]').addEventListener('click', () => {
     props.course.onOpen(true);
     const d = $<HTMLDialogElement>(page, '[data-role=courses]');

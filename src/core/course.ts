@@ -101,6 +101,10 @@ export class VirtualBike {
     return gradeAt(this.course, this.distance);
   }
 
+  gradeAt(distance: number) {
+    return gradeAt(this.course, distance);
+  }
+
   get elevation() {
     return elevationAt(this.course, this.distance);
   }

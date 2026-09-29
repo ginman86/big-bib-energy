@@ -3,10 +3,12 @@ import { bikeModel, Course, VirtualBike } from '../core/course';
 import { bandHalfWidth } from '../core/compliance';
 import { ErgGovernor, ErgState } from '../core/erg';
 import { FactsRecorder } from '../core/facts';
+import { FreeRideGoal, goalProgress, simRiderWatts, trainerGrade } from '../core/free-ride';
 import { hrZoneFor } from '../core/hr';
+import { mean, normalizedPower } from '../core/metrics';
 import { leadTarget, StepResponse } from '../core/latency';
 import { isFree, segmentAt } from '../core/workout';
-import { climbText, clock, distanceText, pct, speedUnit, speedValue, Units } from '../core/format';
+import { climbText, clock, distanceText, pct, speedText, speedUnit, speedValue, Units } from '../core/format';
 import type { CourseMeta } from '../courses';
 import { Session, Snapshot } from '../core/session';
 import type { Workout } from '../core/workout';
@@ -17,7 +19,7 @@ import type { ControlMode, Trainer } from '../devices/trainer';
 import { Avatar, Rider } from './avatar';
 import { $, esc, html, setText } from './dom';
 import { drawHrStrip, hrZoneColor } from './hr-chart';
-import { drawCourse, drawRoute } from './course-chart';
+import { drawCourse, drawRoadAhead, drawRoute } from './course-chart';
 import { drawProfile } from './profile';
 
 export interface RideProps {
@@ -35,6 +37,8 @@ export interface RideProps {
   /** Courses to switch to before starting. */
   courses?: CourseMeta[];
   loadCourse?(id: string): Promise<Course | undefined>;
+  /** Free ride (workout.freeRide): what ends the ride, if anything. */
+  goal?: FreeRideGoal;
   weightKg?: number;
   units: Units;
   onModeChange(mode: ControlMode): void;
@@ -56,6 +60,13 @@ const GLIDE_S = 0.2;
 export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const { workout, ftp, trainer } = props;
   const session = new Session(workout, ftp);
+  /** No workout: ride the course, the trainer follows its gradient. */
+  const freeRide = !!workout.freeRide;
+  const goal: FreeRideGoal = props.goal ?? { kind: 'open' };
+  /** Trainer difficulty in free ride: how much of each gradient you feel (1 = true to the road). */
+  let hills = 1;
+  let roadSent: number | undefined;
+  let roadSentAt = 0;
   const { course, units } = props;
   const model = bikeModel(props.weightKg);
   if (course) session.bike = new VirtualBike(course, model);
@@ -69,23 +80,26 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   let speed = 1;
 
   const page = html(`
-    <main class="ride${course ? ' with-course' : ''}">
+    <main class="ride${course ? ' with-course' : ''}${freeRide ? ' free-ride' : ''}">
       <header class="ride-head">
         <span class="wordmark">BB<i>/</i>E</span>
         <span class="title">${esc(workout.name)}</span>
         <span class="link-status" data-f="link" hidden></span>
         <span class="spacer"></span>
-        <div class="intensity" data-role="intensity" title="Difficulty: ↑ harder · ↓ easier (Shift: 5%)">
+        <div class="intensity" data-role="intensity" title="${
+          freeRide ? 'Trainer difficulty: how much of each hill you feel. ↑ more · ↓ less (Shift: 25%)' : 'Difficulty: ↑ harder · ↓ easier (Shift: 5%)'
+        }">
+          ${freeRide ? '<span class="label intensity-label">Hills</span>' : ''}
           <button data-int="-1" aria-label="Easier">−</button>
           <span class="num" data-f="intensity">100%</span>
           <button data-int="1" aria-label="Harder">+</button>
         </div>
-        <div class="seg" data-role="mode">
+        <div class="seg" data-role="mode"${freeRide ? ' hidden' : ''}>
           <button data-mode="erg">ERG</button>
           <button data-mode="target">Target</button>
         </div>
-        <span class="clock num"><b data-f="elapsed">0:00</b> / ${clock(session.duration)}</span>
-        <button class="btn" data-role="skip" title="Skip interval (→)">Skip</button>
+        <span class="clock num"><b data-f="elapsed">0:00</b>${!freeRide || goal.kind === 'time' ? ` / ${clock(session.duration)}` : ''}</span>
+        <button class="btn" data-role="skip" title="${freeRide ? 'End the ride' : 'Skip interval (→)'}">${freeRide ? 'End' : 'Skip'}</button>
         <button class="btn" data-role="pause" title="Pause (Space)">Pause</button>
       </header>
 
@@ -127,6 +141,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
             <div class="band"></div>
             <div class="marker"></div>
           </div>
+          <div class="grade-big num"><span data-f="biggrade">0</span><small>%</small></div>
           <div class="state" data-f="state">Ready</div>
         </div>
         <div class="interval-clock">
@@ -138,10 +153,10 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
       <footer class="strip">
         <div><span class="label">Cadence</span><span class="num" data-f="cadence">—</span></div>
-        <div><span class="label">Interval avg</span><span class="num" data-f="segavg">—</span></div>
-        <div><span class="label">Interval on target</span><span class="num" data-f="segpct">—</span></div>
-        <div><span class="label">Ride on target</span><span class="num" data-f="ridepct">—</span></div>
-        <div class="next"><span class="label">Next</span><span class="num" data-f="next">—</span></div>
+        <div><span class="label">${freeRide ? 'Avg power' : 'Interval avg'}</span><span class="num" data-f="segavg">—</span></div>
+        <div><span class="label">${freeRide ? 'Norm. power' : 'Interval on target'}</span><span class="num" data-f="segpct">—</span></div>
+        <div><span class="label">${freeRide ? 'Climbed' : 'Ride on target'}</span><span class="num" data-f="ridepct">—</span></div>
+        <div class="next"><span class="label">${freeRide ? 'Avg speed' : 'Next'}</span><span class="num" data-f="next">—</span></div>
       </footer>
     </main>
   `);
@@ -161,6 +176,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     segavg: f('segavg'),
     link: f('link'),
     intensity: f('intensity'),
+    biggrade: f('biggrade'),
     segpct: f('segpct'),
     ridepct: f('ridepct'),
     next: f('next'),
@@ -241,14 +257,19 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
   /** Difficulty in 1% steps; every target (and ERG) follows. */
   function adjust(steps: number) {
-    const v = session.setIntensity(session.intensity + steps / 100);
+    // Free ride: trainer difficulty in 5% steps (Shift: 25%), 0–100%.
+    if (freeRide) {
+      hills = Math.round(Math.min(1, Math.max(0, hills + steps * 0.05)) * 100) / 100;
+      roadSent = undefined; // resend now
+    }
+    const v = freeRide ? hills : session.setIntensity(session.intensity + steps / 100);
     setText(fields.intensity, `${Math.round(v * 100)}%`);
     intensityBox.classList.toggle('changed', v !== 1);
     intensityBox.classList.remove('flash');
     void intensityBox.offsetWidth; // restart the animation
     intensityBox.classList.add('flash');
   }
-  intensityBox.hidden = !!workout.test; // a ramp test runs as written
+  intensityBox.hidden = !!workout.test || (freeRide && !trainer.controllable); // a ramp test runs as written; a power meter has no hills to scale
   intensityBox.querySelectorAll<HTMLButtonElement>('[data-int]').forEach((b) =>
     b.addEventListener('click', () => adjust(Number(b.dataset.int))),
   );
@@ -332,7 +353,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     void props.loadCourse?.(id).then((c) => c && setCourse(c));
   });
   pauseBtn.addEventListener('click', togglePause);
-  $(page, '[data-role=skip]').addEventListener('click', () => session.skip());
+  // Free ride has nothing to skip: the button ends the ride (via the pause screen, so it's never an accident).
+  $(page, '[data-role=skip]').addEventListener('click', () => (freeRide ? session.status === 'running' && togglePause() : session.skip()));
   page.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
     b.addEventListener('click', () => {
       applyMode(b.dataset.mode as ControlMode);
@@ -345,12 +367,13 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     if (e.code === 'Space') {
       e.preventDefault();
       togglePause();
-    } else if (e.key === 'ArrowRight') session.skip();
+    } else if (e.key === 'ArrowRight' && !freeRide) session.skip();
     else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
       e.preventDefault();
       adjust((e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 5 : 1));
     } else if (sim && (e.key === 'w' || e.key === 'W')) nudge(15);
-    else if (sim && (e.key === 's' || e.key === 'S')) nudge(-15); else if (e.key === 'Escape' && session.status === 'running') togglePause();
+    else if (sim && (e.key === 's' || e.key === 'S')) nudge(-15);
+    else if (e.key === 'Escape' && session.status === 'running') togglePause();
     else if (e.key === 'l' || e.key === 'L') hud.hidden = !hud.hidden;
   };
   window.addEventListener('keydown', onKey);
@@ -361,7 +384,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     erg.disabled = true;
     erg.title = `${trainer.name} is a power meter — ERG needs a controllable trainer`;
   }
-  applyMode(mode);
+  if (!freeRide) applyMode(mode);
   showVeil('ready');
 
   const docEl = document.documentElement;
@@ -384,7 +407,9 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     const targetW = session.targetWatts();
     watchLink();
     const running = session.status === 'running';
-    if (sim) sim.goal = targetW;
+    const bike = session.bike;
+    // The simulated rider digs in on climbs when there's no target to chase.
+    if (sim) sim.goal = freeRide && bike ? simRiderWatts(ftp, bike.grade) : targetW;
     // The sim keeps pedalling while paused/ready so the numbers are live, but ride time doesn't move.
     trainer.tick?.(running ? dt : Math.min(dt, 0.25));
     const reading = trainer.latest();
@@ -392,7 +417,9 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     ergState = undefined;
     // Free ride has no target: ERG lets go (flat road) and soft-starts again afterwards.
     const inFree = isFree(segmentAt(session.segments, session.elapsed));
-    if (mode === 'erg') {
+    if (freeRide) {
+      // No ERG: the road block below drives the trainer.
+    } else if (mode === 'erg') {
       const leadW = running ? Math.round((leadTarget(session.segments, session.elapsed, ERG_LEAD_S) ?? 0) * ftp * session.intensity) : targetW;
       const cmd = erg.update({ nowMs: now, active: running && !inFree, targetW: leadW, powerW: reading.power, cadence: reading.cadence });
       if (cmd.kind === 'erg') {
@@ -407,6 +434,21 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       ergState = erg.state;
     }
 
+    // On a course with no target (free ride, or a free block in a workout), the trainer follows the road.
+    const onRoad = !!bike && trainer.controllable && (freeRide || inFree);
+    if (onRoad) {
+      const g = Math.round(trainerGrade(bike, freeRide ? hills : 1) * 1000) / 10; // percent, 0.1 steps
+      if (roadSent === undefined || (Math.abs(g - roadSent) >= 0.1 && now - roadSentAt >= 400)) {
+        roadSent = g;
+        roadSentAt = now;
+        void trainer.setGrade(g, { massKg: bike.model.massKg });
+      }
+    } else if (roadSent !== undefined) {
+      // Back to the workout: Target mode's flat road (ERG takes over by itself).
+      roadSent = undefined;
+      if (mode === 'target') void trainer.setGrade(TARGET_MODE_GRADE);
+    }
+
     const snap = session.advance(
       running ? dt : 0,
       {
@@ -417,6 +459,11 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       // Don't score the rider while ERG is still engaging.
       { unscored: ergState !== undefined && ergState !== 'engaged' },
     );
+    // Distance and lap goals end the ride when reached (time goals end with the clock).
+    if (freeRide && running && (goal.kind === 'distance' || goal.kind === 'laps') && (goalProgress(goal, session.elapsed, bike) ?? 0) >= 1) {
+      session.goalReached = true;
+      session.finish();
+    }
     render(snap, now, realDt);
 
     if (session.status === 'finished') {
@@ -449,6 +496,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       ['Raw power · cadence', `${trainer.latest().power} W · ${trainer.latest().cadence ?? '—'} rpm`],
       ['ERG step response', steps.last === undefined ? 'no steps yet' : `${ms(steps.last)} (avg ${ms(steps.average)}, n=${steps.samples.length})`],
       ['ERG lead', `${ERG_LEAD_S} s`],
+      ['Trainer grade', roadSent === undefined ? '—' : `${roadSent.toFixed(1)}%${freeRide ? ` (hills ${Math.round(hills * 100)}%)` : ''}`],
       ['Display smoothing', '3 s average + glide'],
     ];
     hud.innerHTML = rows.map(([k, v]) => `<div><span class="label">${k}</span><span>${esc(v)}</span></div>`).join('');
@@ -456,7 +504,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
 
   function render(s: Snapshot, now: number, realDt: number) {
     const live = session.status === 'running';
-    docEl.dataset.band = live && !s.settling ? s.band : '';
+    // No target, no verdict colours (free ride, and free blocks in workouts).
+    docEl.dataset.band = live && !s.settling && !s.free ? s.band : '';
     docEl.dataset.settling = String(s.settling);
     // Stay calm until the ride is actually rolling.
     const level = levels.update(live ? powerLevel(zoneFor(s.powerW / ftp)) : 1, now);
@@ -465,7 +514,7 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       dt: realDt * speed,
       running: live,
       paused: session.status === 'paused',
-      mode,
+      mode: freeRide ? 'free' : mode,
       avatarLevel: level,
       erg: ergState,
       reconnecting: trainer.connection === 'reconnecting',
@@ -480,6 +529,103 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       lastHud = now;
       renderHud(now);
     }
+    if (freeRide) renderFreeRide(s, live);
+    else renderTargets(s, live);
+    setText(fields.cadence, s.cadence ? String(s.cadence) : '—');
+    setText(fields.hr, s.heartRate ? String(s.heartRate) : '—');
+    if (props.lthr && s.heartRate) {
+      const z = hrZoneFor(s.heartRate, props.lthr);
+      setText(fields.hrzone, `Z${z.id} · ${z.name}`);
+      fields.hr.style.color = fields.hrzone.style.color = hrZoneColor(z.id);
+    }
+
+    const t0 = Math.max(0, s.elapsed - WINDOW_BEHIND);
+    const bike = session.bike;
+    if (freeRide && bike) {
+      drawRoadAhead(windowCanvas, bike.course, bike.distance, units);
+    } else {
+      drawProfile(windowCanvas, {
+        segments: session.segments,
+        ftp,
+        samples: session.samples,
+        elapsed: s.elapsed,
+        range: [t0, t0 + WINDOW_SPAN],
+        scale: session.intensity,
+        live: { t: s.elapsed, power: s.powerW, target: s.targetW },
+        tolerance: session.tolerance,
+        detailed: true,
+      });
+    }
+    // The HR canvas is narrower (readout beside it); match the power chart's px/second so cursors align.
+    const hrSpan = WINDOW_SPAN * (hrCanvas.clientWidth / Math.max(1, windowCanvas.clientWidth));
+    drawHrStrip(hrCanvas, {
+      samples: session.samples,
+      range: [t0, t0 + hrSpan],
+      lthr: props.lthr,
+      live: { t: s.elapsed, bpm: s.heartRate },
+    });
+    if (bike && courseFields && courseCanvas) {
+      setText(courseFields.speed, speedValue(bike.speed, units).toFixed(1));
+      setText(courseFields.distance, distanceText(bike.distance, units));
+      const g = Math.round(bike.grade * 100);
+      setText(courseFields.grade, `${g > 0 ? '+' : g < 0 ? '−' : ''}${Math.abs(g)}%`);
+      setText(courseFields.lap, `Lap ${bike.lap}`);
+      setText(courseFields.climb, climbCallout(bike.course, bike.distance, units));
+      if (now - lastCourse > 200) {
+        lastCourse = now;
+        drawCourse(courseCanvas, bike.course, bike.distance);
+        if (routeCanvas) drawRoute(routeCanvas, bike.course, bike.distance);
+      }
+    }
+    if (now - lastOverview > 500) {
+      lastOverview = now;
+      // Free ride: the power trace so far (open rides grow the axis as they go).
+      const range: [number, number] | undefined = freeRide && goal.kind !== 'time' ? [0, Math.max(600, s.elapsed * 1.15)] : undefined;
+      drawProfile(overview, { segments: session.segments, ftp, samples: session.samples, elapsed: s.elapsed, scale: session.intensity, range });
+    }
+  }
+
+  let lastStats = 0;
+  /** Hero and footer for a free ride: grade front and centre, goal progress on the right. */
+  function renderFreeRide(s: Snapshot, live: boolean) {
+    const bike = session.bike;
+    const g = bike ? bike.grade * 100 : 0;
+    setText(fields.biggrade, `${g >= 0.05 ? '+' : g <= -0.05 ? '−' : ''}${Math.abs(g).toFixed(1)}`);
+    const climb = bike ? climbCallout(bike.course, bike.distance, units).replace(/^ · /, '') : '';
+    setText(fields.state, !live ? (session.status === 'ready' ? 'Ready' : 'Paused') : climb || (g >= 3 ? 'Climbing' : g <= -2 ? 'Descending' : g >= 1 ? 'Drag' : 'Flat'));
+
+    const lapLeft = bike ? bike.course.lapMeters - (bike.distance % bike.course.lapMeters) : 0;
+    if (goal.kind === 'time') {
+      setText(fields.zone, 'Time left');
+      setText(fields.remaining, clock(goal.seconds - s.elapsed));
+      setText(fields.segment, `of ${clock(goal.seconds)}`);
+    } else if (goal.kind === 'distance') {
+      setText(fields.zone, 'To go');
+      setText(fields.remaining, distanceText(Math.max(0, goal.meters - (bike?.distance ?? 0)), units).replace(/ \w+$/, ''));
+      setText(fields.segment, `of ${distanceText(goal.meters, units)}`);
+    } else if (goal.kind === 'laps') {
+      setText(fields.zone, 'Lap');
+      setText(fields.remaining, `${Math.min(bike?.lap ?? 1, goal.laps)}/${goal.laps}`);
+      setText(fields.segment, `${distanceText(lapLeft, units)} to the line`);
+    } else {
+      setText(fields.zone, 'Lap');
+      setText(fields.remaining, String(bike?.lap ?? 1));
+      setText(fields.segment, `${distanceText(lapLeft, units)} to the line`);
+    }
+
+    // Ride averages: once a second is plenty.
+    const now = performance.now();
+    if (now - lastStats > 1000) {
+      lastStats = now;
+      const w = session.samples.map((x) => x.power);
+      setText(fields.segavg, w.length ? `${Math.round(mean(w))} W` : '—');
+      setText(fields.segpct, w.length >= 30 ? `${Math.round(normalizedPower(w))} W` : '—');
+      setText(fields.ridepct, bike ? climbText(bike.climbed, units) : '—');
+      setText(fields.next, bike && s.elapsed > 0 ? speedText(bike.distance / s.elapsed, units) : '—');
+    }
+  }
+
+  function renderTargets(s: Snapshot, live: boolean) {
     setText(fields.target, s.free ? '—' : String(s.targetW));
     // In a ramp test, skip stops the test (and goes to the cool-down).
     setText(skipBtn, s.testing ? 'I’m done' : 'Skip');
@@ -503,13 +649,6 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       const zone = zoneFor((s.segment.from + s.segment.to) / 2);
       setText(fields.zone, `Z${zone.id} · ${zone.name}`);
     }
-    setText(fields.cadence, s.cadence ? String(s.cadence) : '—');
-    setText(fields.hr, s.heartRate ? String(s.heartRate) : '—');
-    if (props.lthr && s.heartRate) {
-      const z = hrZoneFor(s.heartRate, props.lthr);
-      setText(fields.hrzone, `Z${z.id} · ${z.name}`);
-      fields.hr.style.color = fields.hrzone.style.color = hrZoneColor(z.id);
-    }
     setText(fields.segavg, s.segmentAvgPower ? `${Math.round(s.segmentAvgPower)} W` : '—');
     setText(fields.segpct, s.settling ? '—' : pct(s.segmentCompliance));
     setText(fields.ridepct, pct(s.totalCompliance));
@@ -522,44 +661,6 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       nextBox.classList.remove('soon');
     }
 
-    const t0 = Math.max(0, s.elapsed - WINDOW_BEHIND);
-    drawProfile(windowCanvas, {
-      segments: session.segments,
-      ftp,
-      samples: session.samples,
-      elapsed: s.elapsed,
-      range: [t0, t0 + WINDOW_SPAN],
-      scale: session.intensity,
-      live: { t: s.elapsed, power: s.powerW, target: s.targetW },
-      tolerance: session.tolerance,
-      detailed: true,
-    });
-    // The HR canvas is narrower (readout beside it); match the power chart's px/second so cursors align.
-    const hrSpan = WINDOW_SPAN * (hrCanvas.clientWidth / Math.max(1, windowCanvas.clientWidth));
-    drawHrStrip(hrCanvas, {
-      samples: session.samples,
-      range: [t0, t0 + hrSpan],
-      lthr: props.lthr,
-      live: { t: s.elapsed, bpm: s.heartRate },
-    });
-    const bike = session.bike;
-    if (bike && courseFields && courseCanvas) {
-      setText(courseFields.speed, speedValue(bike.speed, units).toFixed(1));
-      setText(courseFields.distance, distanceText(bike.distance, units));
-      const g = Math.round(bike.grade * 100);
-      setText(courseFields.grade, `${g > 0 ? '+' : g < 0 ? '−' : ''}${Math.abs(g)}%`);
-      setText(courseFields.lap, `Lap ${bike.lap}`);
-      setText(courseFields.climb, climbCallout(bike.course, bike.distance, units));
-      if (now - lastCourse > 200) {
-        lastCourse = now;
-        drawCourse(courseCanvas, bike.course, bike.distance);
-        if (routeCanvas) drawRoute(routeCanvas, bike.course, bike.distance);
-      }
-    }
-    if (now - lastOverview > 500) {
-      lastOverview = now;
-      drawProfile(overview, { segments: session.segments, ftp, samples: session.samples, elapsed: s.elapsed, scale: session.intensity });
-    }
   }
 
   raf = requestAnimationFrame(frame);
@@ -578,7 +679,10 @@ function climbCallout(c: Course, distance: number, units: Units): string {
   if (!c.climbs?.length) return '';
   const at = ((distance % c.lapMeters) + c.lapMeters) % c.lapMeters;
   for (const cl of c.climbs) {
-    if (at >= cl.start && at < cl.end) return ` · ${cl.name} ${Math.round(cl.avgGrade * 100)}% · ${climbText(cl.end - at, units)} to the top`;
+    if (at >= cl.start && at < cl.end) {
+      const left = cl.end - at;
+      return ` · ${cl.name} ${Math.round(cl.avgGrade * 100)}% · ${left >= 400 ? distanceText(left, units) : climbText(left, units)} to the top`;
+    }
   }
   let best: { name: string; ahead: number } | undefined;
   for (const cl of c.climbs) {

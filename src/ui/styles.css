@@ -141,6 +141,9 @@ button {
   display: inline-flex;
   border: 1px solid var(--line-strong);
 }
+.seg[hidden] {
+  display: none;
+}
 .seg button {
   background: transparent;
   border: 0;
@@ -1855,4 +1858,67 @@ dialog::backdrop {
 }
 .course-note {
   color: var(--text);
+}
+
+/* ——— Free ride ——— */
+.grade-big {
+  display: none;
+}
+.ride.free-ride .gauge-target,
+.ride.free-ride .gauge {
+  display: none;
+}
+.ride.free-ride .grade-big {
+  display: block;
+  font-size: clamp(64px, 8vw, 112px);
+  font-weight: 200;
+  line-height: 0.9;
+}
+.ride.free-ride .grade-big small {
+  font-size: 0.35em;
+  color: var(--text-2);
+  margin-left: 4px;
+}
+.ride.free-ride .verdict .state {
+  font-size: clamp(18px, 2vw, 26px);
+  color: var(--text-2);
+}
+.intensity-label {
+  padding-left: 10px;
+  color: var(--text-3);
+}
+
+.free-ride-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 20px;
+  margin-top: 40px;
+  padding: 22px 24px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+.free-ride-panel .fr-text {
+  flex: 1 1 280px;
+}
+.free-ride-panel h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 28px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.free-ride-panel p {
+  margin: 4px 0 0;
+}
+.fr-goal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fr-goal .sheet-input {
+  width: 72px;
+}
+.fr-goal[data-kind='open'] .fr-value {
+  display: none;
 }
