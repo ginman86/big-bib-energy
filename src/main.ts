@@ -2,6 +2,9 @@ import './ui/styles.css';
 import { Account, completeStravaSignIn, loadAccount, saveRemoteSettings, signOut, startStravaSignIn } from './api/account';
 import { syncHistory } from './api/history';
 import { flushQueue, pendingRide, sendRide } from './api/uploads';
+import { deleteWorkout, localWorkouts, saveWorkout, syncWorkouts } from './api/workouts';
+import { FormatError, importWorkoutFile, newWorkoutId, toZwo } from './core/formats';
+import { openBuilder } from './ui/builder';
 import { toHistoryRide } from './core/history';
 import { earnedBy } from './core/achievements';
 import { HistoryRide, progression } from './core/progression';
@@ -32,10 +35,67 @@ let account: Account | undefined;
 let accountNote: string | undefined;
 let ftpOfferDismissed = false;
 let setupOpen = false;
+/** The rider's own workouts: local, merged with the account's when signed in. */
+let custom: Workout[] = localWorkouts();
+let libraryNote: string | undefined;
 /** Whether the ride that just finished used the simulated rider. */
 let lastRideSimulated = true;
 /** Local rides until signed in; then local merged with the account's synced rides. */
 let history: HistoryRide[] = loadHistory().map(toHistoryRide);
+
+async function refreshWorkouts() {
+  if (!account) return;
+  try {
+    custom = await syncWorkouts();
+    refreshHome();
+  } catch (err) {
+    console.warn('Workout sync failed', err);
+  }
+}
+
+// ——— Workout library ———
+
+function saveCustom(w: Workout) {
+  custom = [w, ...custom.filter((x) => x.id !== w.id)];
+  libraryNote = undefined;
+  void saveWorkout(w, !!account);
+  home();
+}
+
+function build(initial?: Workout, existing = false, warnings?: string[]) {
+  openBuilder({ initial, existing, warnings, ftp: settings.ftp, onSave: saveCustom });
+}
+
+async function importFiles(files: File[]) {
+  const results = await Promise.all(
+    files.map(async (f) => {
+      try {
+        return { file: f.name, ...importWorkoutFile(f.name, await f.text(), settings.ftp) };
+      } catch (err) {
+        return { file: f.name, error: err instanceof FormatError ? err.message : 'Could not read the file' };
+      }
+    }),
+  );
+  const ok = results.filter((r) => 'workout' in r);
+  const failed = results.filter((r) => 'error' in r);
+  libraryNote = failed.map((r) => `${r.file}: ${'error' in r ? r.error : ''}`).join(' · ') || undefined;
+  if (files.length === 1 && ok.length === 1) {
+    // One file: review it in the builder before saving.
+    const r = ok[0] as { workout: Workout; warnings: string[] };
+    home();
+    build(r.workout, false, r.warnings);
+    return;
+  }
+  for (const r of ok) saveCustom((r as { workout: Workout }).workout);
+  if (ok.length) libraryNote = [`Imported ${ok.length} workout${ok.length > 1 ? 's' : ''}`, libraryNote].filter(Boolean).join(' · ');
+  home();
+}
+
+function download(name: string, text: string, type: string) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  Object.assign(document.createElement('a'), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 async function refreshHistory() {
   if (!account) return;
@@ -154,6 +214,7 @@ async function boot() {
   refreshHome();
   if (account?.canUpload) void flushQueue();
   void refreshHistory();
+  void refreshWorkouts();
   void autoConnect();
 }
 
@@ -229,6 +290,19 @@ function home() {
         home();
       },
       onRide: ride,
+      custom,
+      libraryNote,
+      onNewWorkout: () => build(),
+      onImport: (files) => void importFiles(files),
+      onEdit: (w) => build(w, true),
+      onDuplicate: (w) => build({ ...structuredClone(w), id: newWorkoutId(w.name), name: `${w.name} (copy)` }),
+      onDeleteWorkout(w) {
+        if (!confirm(`Delete "${w.name}"?`)) return;
+        custom = custom.filter((x) => x.id !== w.id);
+        void deleteWorkout(w.id, !!account);
+        home();
+      },
+      onExport: (w) => download(`${w.name.replace(/[^\w.-]+/g, '-')}.zwo`, toZwo(w), 'application/xml'),
       setupOpen,
       onSetup(open) {
         setupOpen = open;

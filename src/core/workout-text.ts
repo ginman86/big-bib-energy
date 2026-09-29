@@ -107,7 +107,8 @@ function expandRepeat(n: number, body: Step[]): Step[] {
   const out: Step[] = [];
   for (let k = 1; k <= n; k++) {
     body.forEach((s, j) => {
-      const auto = body.length === 2 ? (j === 0 ? `Interval ${k}/${n}` : `Recover ${k}/${n}`) : `Set ${k}/${n}`;
+      // Free ride keeps its own label so the ride screen reads "Free ride", not "Recover".
+      const auto = s.kind === 'free' ? undefined : body.length === 2 ? (j === 0 ? `Interval ${k}/${n}` : `Recover ${k}/${n}`) : `Set ${k}/${n}`;
       out.push({ ...s, label: s.label ?? auto });
     });
   }

@@ -108,6 +108,12 @@ describe('text syntax', () => {
     expect(steps[8]).toMatchObject({ label: 'Cool down' });
   });
 
+  it('keeps free ride labelled as free ride inside repeats', () => {
+    const steps = parseWorkoutText('2x(20m 97, 5m free)');
+    expect(steps.map((s) => s.label)).toEqual(['Interval 1/2', undefined, 'Interval 2/2', undefined]);
+    expect(formatWorkoutText(steps)).toBe('2x(20m 97, 5m free)');
+  });
+
   it('formats back, folding repeats', () => {
     const src = '10m 50>75, 3x(10m 90, 5m 55), 1m30s free, 8m 65>40 "Cool down"';
     expect(formatWorkoutText(parseWorkoutText(src))).toBe(src);

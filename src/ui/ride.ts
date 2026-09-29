@@ -411,6 +411,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     const half = bandHalfWidth(s.targetW, session.tolerance);
     const pos = Math.min(1, Math.max(0, (s.powerW - (s.targetW - range)) / (2 * range)));
     marker.style.left = `${pos * 100}%`;
+    // No target in free ride: nothing to gauge against.
+    band.parentElement!.style.visibility = s.free ? 'hidden' : '';
     band.style.left = `${((range - half) / (2 * range)) * 100}%`;
     band.style.width = `${(half / range) * 100}%`;
 

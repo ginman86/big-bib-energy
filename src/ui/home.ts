@@ -67,6 +67,16 @@ export interface HomeProps {
   onConnectHr(): Promise<void>;
   onDisconnectHr(): Promise<void>;
   onRide(w: Workout): void;
+  /** The rider's own workouts (newest first). */
+  custom: Workout[];
+  /** One-off message about imports. */
+  libraryNote?: string;
+  onNewWorkout(): void;
+  onImport(files: File[]): void;
+  onEdit(w: Workout): void;
+  onDuplicate(w: Workout): void;
+  onDeleteWorkout(w: Workout): void;
+  onExport(w: Workout): void;
   /** Whether the setup sheet is open (kept by main so it survives re-renders). */
   setupOpen: boolean;
   onSetup(open: boolean): void;
@@ -118,7 +128,19 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
           : ''
       }
 
-      <ol class="workouts"></ol>
+      <section class="library-head">
+        <span class="label">Workouts</span>
+        ${props.libraryNote ? `<span class="hint">${esc(props.libraryNote)}</span>` : ''}
+        <span class="library-actions">
+          <button class="btn" data-role="new-workout">New</button>
+          <button class="btn" data-role="import">Import</button>
+          <input type="file" data-role="import-file" accept=".zwo,.mrc,.erg" multiple hidden />
+        </span>
+      </section>
+      ${props.custom.length ? `<span class="label library-section">Mine</span><ol class="workouts" data-list="mine"></ol>` : ''}
+      ${props.custom.length ? `<span class="label library-section">Built-in</span>` : ''}
+      <ol class="workouts" data-list="builtin"></ol>
+      <div class="drop-hint" hidden><span>Drop .zwo, .mrc or .erg files to import</span></div>
 
       ${setupSheet(props, hasBt)}
       <dialog class="wall-dialog" data-role="wall" aria-label="Patches">
@@ -131,29 +153,70 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
     </main>
   `);
 
-  const list = $(page, '.workouts');
   const canvases: [HTMLCanvasElement, Workout][] = [];
-  LIBRARY.forEach((w, i) => {
-    const est = estimate(w, settings.ftp);
-    const li = html(`
-      <li class="workout" tabindex="0">
-        <span class="workout-idx">${String(i + 1).padStart(2, '0')}</span>
-        <div>
-          <div class="workout-name">${esc(w.name)}</div>
-          <p class="workout-desc">${esc(w.description)}</p>
-          <div class="workout-meta">
-            <span class="label">${hoursMinutes(est.seconds)}</span>
-            <span class="label">TSS ${Math.round(est.tss)}</span>
-            <span class="label">${esc(est.focus)}</span>
+  const addRows = (list: HTMLElement, workouts: Workout[], mine: boolean) =>
+    workouts.forEach((w, i) => {
+      const est = estimate(w, settings.ftp);
+      const actions = mine
+        ? `<button class="link" data-act="edit">Edit</button><button class="link" data-act="dup">Duplicate</button>
+           <button class="link" data-act="export">Export .zwo</button><button class="link" data-act="delete">Delete</button>`
+        : `<button class="link" data-act="dup">Duplicate &amp; edit</button>`;
+      const li = html(`
+        <li class="workout" tabindex="0">
+          <span class="workout-idx">${String(i + 1).padStart(2, '0')}</span>
+          <div>
+            <div class="workout-name">${esc(w.name)}</div>
+            ${w.description ? `<p class="workout-desc">${esc(w.description)}</p>` : ''}
+            <div class="workout-meta">
+              <span class="label">${hoursMinutes(est.seconds)}</span>
+              <span class="label">TSS ${Math.round(est.tss)}</span>
+              <span class="label">${esc(est.focus)}</span>
+              <span class="workout-actions">${actions}</span>
+            </div>
           </div>
-        </div>
-        <canvas></canvas>
-      </li>
-    `);
-    li.addEventListener('click', () => props.onRide(w));
-    li.addEventListener('keydown', (e) => e.key === 'Enter' && props.onRide(w));
-    list.append(li);
-    canvases.push([$(li, 'canvas'), w]);
+          <canvas></canvas>
+        </li>
+      `);
+      li.addEventListener('click', (e) => {
+        const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+        if (act === 'edit') props.onEdit(w);
+        else if (act === 'dup') props.onDuplicate(w);
+        else if (act === 'export') props.onExport(w);
+        else if (act === 'delete') props.onDeleteWorkout(w);
+        else props.onRide(w);
+      });
+      li.addEventListener('keydown', (e) => e.key === 'Enter' && e.target === li && props.onRide(w));
+      list.append(li);
+      canvases.push([$(li, 'canvas'), w]);
+    });
+  const mineList = page.querySelector<HTMLElement>('[data-list=mine]');
+  if (mineList) addRows(mineList, props.custom, true);
+  addRows($(page, '[data-list=builtin]'), LIBRARY, false);
+
+  // Import: button, or drop files anywhere on the page.
+  const fileInput = $<HTMLInputElement>(page, '[data-role=import-file]');
+  $(page, '[data-role=import]').addEventListener('click', () => fileInput.click());
+  $(page, '[data-role=new-workout]').addEventListener('click', () => props.onNewWorkout());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files?.length) props.onImport([...fileInput.files]);
+    fileInput.value = '';
+  });
+  const dropHint = $(page, '.drop-hint');
+  const hasFiles = (e: DragEvent) => [...(e.dataTransfer?.types ?? [])].includes('Files');
+  page.addEventListener('dragover', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dropHint.hidden = false;
+  });
+  page.addEventListener('dragleave', (e) => {
+    if (e.target === dropHint) dropHint.hidden = true;
+  });
+  page.addEventListener('drop', (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dropHint.hidden = true;
+    const files = [...(e.dataTransfer?.files ?? [])];
+    if (files.length) props.onImport(files);
   });
 
   root.append(page);

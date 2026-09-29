@@ -706,6 +706,232 @@ dialog::backdrop {
   height: 64px;
 }
 
+/* ——— Workout library ——— */
+
+.library-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 18px 0 6px;
+  border-top: 1px solid var(--line);
+}
+.library-actions {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}
+.library-section {
+  display: block;
+  margin-top: 22px;
+  color: var(--text-3);
+}
+.workout-actions {
+  display: inline-flex;
+  gap: 14px;
+  margin-left: 8px;
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.workout:hover .workout-actions,
+.workout:focus-within .workout-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .workout-actions {
+    opacity: 1;
+  }
+}
+.workout-actions .link {
+  font-size: 12px;
+}
+.drop-hint {
+  position: fixed;
+  inset: 16px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--text-2);
+  background: rgba(10, 10, 11, 0.85);
+  font-family: var(--display);
+  font-size: 32px;
+  text-transform: uppercase;
+}
+.drop-hint[hidden] {
+  display: none;
+}
+.drop-hint span {
+  pointer-events: none;
+}
+
+/* ——— Builder ——— */
+
+.builder {
+  width: min(1040px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 22px 28px 0;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  overflow-y: auto;
+}
+.import-warnings {
+  margin: 16px 0 0;
+  padding: 10px 14px 10px 30px;
+  border-left: 2px solid var(--over);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.builder-meta {
+  display: grid;
+  gap: 8px;
+  margin: 18px 0 12px;
+}
+.builder-name {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 500;
+  text-transform: uppercase;
+  padding: 0 0 4px;
+}
+.builder-desc,
+.builder-text {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+.builder-text {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.builder-name:focus,
+.builder-desc:focus,
+.builder-text:focus {
+  outline: none;
+  border-color: var(--text-2);
+}
+.builder-profile {
+  width: 100%;
+  height: 110px;
+  display: block;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.builder-stats {
+  margin: 8px 0 16px;
+  font-variant-numeric: tabular-nums;
+}
+.builder-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.builder-tabs code {
+  color: var(--text);
+}
+.b-rows {
+  display: grid;
+  gap: 6px;
+}
+.b-row {
+  display: grid;
+  grid-template-columns: 110px 80px 200px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.b-kind,
+.b-dur,
+.b-pow,
+.b-label,
+.b-set input {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 6px 8px;
+}
+.b-dur,
+.b-pow {
+  width: 70px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.b-power {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.b-label {
+  min-width: 0;
+}
+.b-actions {
+  display: flex;
+  gap: 12px;
+}
+.b-actions .link {
+  text-decoration: none;
+  font-size: 15px;
+}
+.b-actions .link:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.b-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0;
+}
+.b-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.b-set input {
+  width: 58px;
+  padding: 5px 6px;
+  text-align: right;
+}
+.b-set .b-set-n {
+  width: 40px;
+}
+.builder-error {
+  color: var(--over);
+  font-size: 13px;
+  min-height: 1.2em;
+}
+.builder-foot {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 14px 0 18px;
+  margin-top: 8px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+
 /* ——— Ride ——— */
 
 .ride {
@@ -1355,6 +1581,16 @@ dialog::backdrop {
   .sheet-row {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+  .builder {
+    padding: 16px 14px 0;
+  }
+  .b-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .b-label,
+  .b-actions {
+    grid-column: 1 / -1;
   }
   .hr-summary-grid {
     grid-template-columns: 1fr;
