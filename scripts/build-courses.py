@@ -40,7 +40,7 @@ def max_grade(profile, span=50):
 
 def terrain(climb_m, lap_m):
     per_km = climb_m / (lap_m / 1000)
-    return 'Flat' if per_km < 4 else 'Rolling' if per_km < 12 else 'Hilly'
+    return 'Flat' if per_km < 6 else 'Rolling' if per_km < 12 else 'Hilly'
 
 
 def build(src):

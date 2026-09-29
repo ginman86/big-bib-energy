@@ -47,7 +47,7 @@ export function metaOf(c: Course): CourseMeta {
     climbMeters: Math.round(climb),
     maxGrade,
     altitudeM: Math.round(c.profile.reduce((a, p) => a + p[1], 0) / c.profile.length),
-    terrain: per < 4 ? 'Flat' : per < 12 ? 'Rolling' : 'Hilly',
+    terrain: per < 6 ? 'Flat' : per < 12 ? 'Rolling' : 'Hilly',
     preview,
     custom: true,
   };
