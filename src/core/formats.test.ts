@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { liveWorkouts, mergeCustom } from './custom-workouts';
+import { CustomEntry, liveWorkouts, mergeCustom } from './custom-workouts';
 import { FormatError, importWorkoutFile, parseZwo, toZwo } from './formats';
 import { formatWorkoutText, parseWorkoutText, WorkoutSyntaxError } from './workout-text';
 import { expand, totalDuration } from './workout';
@@ -136,6 +136,6 @@ describe('custom workout sync', () => {
     const olderLocal = [{ id: 'custom-a', workout: w('local'), updatedAt: '2026-09-28T09:00:00Z' }];
     expect(mergeCustom(olderLocal, remote)).toMatchObject({ merged: [{ workout: { name: 'server' } }], push: [] });
     const deletedRemote = [{ id: 'custom-a', deleted: true, updatedAt: '2026-09-28T12:00:00Z' }];
-    expect(liveWorkouts(mergeCustom(newerLocal, deletedRemote).merged)).toEqual([]);
+    expect(liveWorkouts(mergeCustom<CustomEntry>(newerLocal, deletedRemote).merged)).toEqual([]);
   });
 });

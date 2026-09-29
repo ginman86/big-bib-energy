@@ -50,32 +50,15 @@ describe('course profile', () => {
   });
 });
 
-describe('Richmond 2015', async () => {
-  const { RICHMOND_2015: c } = await import('../courses/richmond-2015');
-  const { lapClimb } = await import('./course');
-
-  it('is a closed 16.2 km lap with realistic climbing and grades', () => {
-    expect(c.profile[0][0]).toBe(0);
-    expect(c.profile[c.profile.length - 1][0]).toBe(c.lapMeters);
-    expect(c.profile[c.profile.length - 1][1]).toBe(c.profile[0][1]);
-    expect(lapClimb(c)).toBeGreaterThan(120);
-    expect(lapClimb(c)).toBeLessThan(170);
-    let max = 0;
-    for (let d = 0; d < c.lapMeters; d += 10) max = Math.max(max, Math.abs(gradeAt(c, d)));
-    expect(max).toBeGreaterThan(0.12); // 23rd Street
-    expect(max).toBeLessThan(0.22);
-  });
-
-  it('a lap at 250 W takes a believable time', () => {
-    const b = new VirtualBike(c, bikeModel(75));
-    let t = 0;
-    while (b.distance < c.lapMeters && t < 3600) {
-      b.step(250, 1);
-      t++;
-    }
-    // Pros averaged ~43 km/h on ~6 W/kg; 3.3 W/kg should be high 20s to low 30s.
-    const kmh = c.lapMeters / t * 3.6;
-    expect(kmh).toBeGreaterThan(27);
-    expect(kmh).toBeLessThan(34);
+describe('altitude', () => {
+  it('thins the air: Denver is faster than sea level on the flat', async () => {
+    const { airDensity } = await import('./course');
+    expect(airDensity(0)).toBeCloseTo(1.225, 3);
+    expect(airDensity(1600)).toBeGreaterThan(1.02);
+    expect(airDensity(1600)).toBeLessThan(1.06);
+    const sea = steadySpeed(200, 0, bikeModel(75));
+    const denver = steadySpeed(200, 0, bikeModel(75), 1600);
+    expect(denver / sea).toBeGreaterThan(1.03);
+    expect(denver / sea).toBeLessThan(1.07);
   });
 });

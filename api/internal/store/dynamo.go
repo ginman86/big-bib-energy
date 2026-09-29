@@ -207,10 +207,10 @@ func (d *Dynamo) ListRides(ctx context.Context, athleteID int64, since time.Time
 	}
 }
 
-func workoutSK(id string) string { return "WORKOUT#" + id }
+func customSK(kind, id string) string { return kind + "#" + id }
 
-func (d *Dynamo) ListWorkouts(ctx context.Context, athleteID int64) ([]CustomWorkout, error) {
-	var out []CustomWorkout
+func (d *Dynamo) ListCustom(ctx context.Context, athleteID int64, kind string) ([]CustomItem, error) {
+	var out []CustomItem
 	var start map[string]types.AttributeValue
 	for {
 		res, err := d.DB.Query(ctx, &dynamodb.QueryInput{
@@ -218,16 +218,19 @@ func (d *Dynamo) ListWorkouts(ctx context.Context, athleteID int64) ([]CustomWor
 			KeyConditionExpression: aws.String("pk = :pk AND begins_with(sk, :w)"),
 			ExpressionAttributeValues: map[string]types.AttributeValue{
 				":pk": &types.AttributeValueMemberS{Value: athleteKey(athleteID)},
-				":w":  &types.AttributeValueMemberS{Value: "WORKOUT#"},
+				":w":  &types.AttributeValueMemberS{Value: customSK(kind, "")},
 			},
 			ExclusiveStartKey: start,
 		})
 		if err != nil {
 			return nil, err
 		}
-		var page []CustomWorkout
+		var page []CustomItem
 		if err := attributevalue.UnmarshalListOfMaps(res.Items, &page); err != nil {
 			return nil, err
+		}
+		for i := range page {
+			page[i].Kind = kind
 		}
 		out = append(out, page...)
 		if res.LastEvaluatedKey == nil {
@@ -237,24 +240,25 @@ func (d *Dynamo) ListWorkouts(ctx context.Context, athleteID int64) ([]CustomWor
 	}
 }
 
-func (d *Dynamo) GetWorkout(ctx context.Context, athleteID int64, id string) (*CustomWorkout, error) {
-	out, err := d.DB.GetItem(ctx, &dynamodb.GetItemInput{TableName: &d.Table, Key: key(athleteKey(athleteID), workoutSK(id)), ConsistentRead: aws.Bool(true)})
+func (d *Dynamo) GetCustom(ctx context.Context, athleteID int64, kind, id string) (*CustomItem, error) {
+	out, err := d.DB.GetItem(ctx, &dynamodb.GetItemInput{TableName: &d.Table, Key: key(athleteKey(athleteID), customSK(kind, id)), ConsistentRead: aws.Bool(true)})
 	if err != nil || out.Item == nil {
 		return nil, err
 	}
-	var w CustomWorkout
+	var w CustomItem
 	if err := attributevalue.UnmarshalMap(out.Item, &w); err != nil {
 		return nil, err
 	}
+	w.Kind = kind
 	return &w, nil
 }
 
-func (d *Dynamo) PutWorkout(ctx context.Context, w *CustomWorkout) error {
+func (d *Dynamo) PutCustom(ctx context.Context, w *CustomItem) error {
 	item, err := attributevalue.MarshalMap(w)
 	if err != nil {
 		return err
 	}
-	for k, v := range key(athleteKey(w.AthleteID), workoutSK(w.ID)) {
+	for k, v := range key(athleteKey(w.AthleteID), customSK(w.Kind, w.ID)) {
 		item[k] = v
 	}
 	_, err = d.DB.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.Table, Item: item})

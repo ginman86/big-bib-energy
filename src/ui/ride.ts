@@ -6,7 +6,8 @@ import { FactsRecorder } from '../core/facts';
 import { hrZoneFor } from '../core/hr';
 import { leadTarget, StepResponse } from '../core/latency';
 import { isFree, segmentAt } from '../core/workout';
-import { clock, distanceText, pct, speedUnit, speedValue, Units } from '../core/format';
+import { climbText, clock, distanceText, pct, speedUnit, speedValue, Units } from '../core/format';
+import type { CourseMeta } from '../courses';
 import { Session, Snapshot } from '../core/session';
 import type { Workout } from '../core/workout';
 import { zoneFor } from '../core/zones';
@@ -16,7 +17,7 @@ import type { ControlMode, Trainer } from '../devices/trainer';
 import { Avatar, Rider } from './avatar';
 import { $, esc, html, setText } from './dom';
 import { drawHrStrip, hrZoneColor } from './hr-chart';
-import { drawCourse } from './course-chart';
+import { drawCourse, drawRoute } from './course-chart';
 import { drawProfile } from './profile';
 
 export interface RideProps {
@@ -31,6 +32,9 @@ export interface RideProps {
   lthr?: number;
   /** Virtual course for speed and distance. */
   course?: Course;
+  /** Courses to switch to before starting. */
+  courses?: CourseMeta[];
+  loadCourse?(id: string): Promise<Course | undefined>;
   weightKg?: number;
   units: Units;
   onModeChange(mode: ControlMode): void;
@@ -53,7 +57,8 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const { workout, ftp, trainer } = props;
   const session = new Session(workout, ftp);
   const { course, units } = props;
-  if (course) session.bike = new VirtualBike(course, bikeModel(props.weightKg));
+  const model = bikeModel(props.weightKg);
+  if (course) session.bike = new VirtualBike(course, model);
   const sim = trainer instanceof SimulatedTrainer ? trainer : undefined;
   // A read-only power meter can't hold watts for you.
   let mode: ControlMode = trainer.controllable ? props.mode : 'target';
@@ -98,9 +103,10 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       ${
         course
           ? `<section class="course-strip">
+              <canvas class="route-map" aria-hidden="true"></canvas>
               <div class="course-map">
                 <canvas class="course-chart"></canvas>
-                <span class="label course-name">${esc(course.name)} · <span data-f="lap">Lap 1</span></span>
+                <span class="label course-name"><span data-f="coursename">${esc(course.name)}</span> · <span data-f="lap">Lap 1</span><span data-f="climb"></span></span>
               </div>
               <div class="course-readout">
                 <span class="speed"><span class="num" data-f="speed">0.0</span><span class="label">${speedUnit(units)}</span></span>
@@ -166,8 +172,17 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   const windowCanvas = $<HTMLCanvasElement>(page, '.window');
   const hrCanvas = $<HTMLCanvasElement>(page, '.hr-chart');
   const courseCanvas = page.querySelector<HTMLCanvasElement>('.course-chart');
-  const courseFields = course && { speed: f('speed'), distance: f('distance'), grade: f('grade'), lap: f('lap') };
+  const routeCanvas = page.querySelector<HTMLCanvasElement>('.route-map');
+  const courseFields = course && { speed: f('speed'), distance: f('distance'), grade: f('grade'), lap: f('lap'), name: f('coursename'), climb: f('climb') };
   let lastCourse = 0;
+
+  /** Switch course (only before the ride starts). */
+  function setCourse(c: Course) {
+    if (session.status !== 'ready' || !courseFields) return;
+    session.bike = new VirtualBike(c, model);
+    setText(courseFields.name, c.name);
+    lastCourse = 0;
+  }
   const pauseBtn = $<HTMLButtonElement>(page, '[data-role=pause]');
   const skipBtn = $<HTMLButtonElement>(page, '[data-role=skip]');
   const intensityBox = $(page, '[data-role=intensity]');
@@ -187,6 +202,16 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
           <button class="btn" data-v="end" hidden>End ride</button>
           <button class="btn" data-v="quit">Quit</button>
         </div>
+        ${
+          course && props.courses?.length && props.loadCourse
+            ? `<label class="veil-course" data-v="course-row">
+                <span class="label">Course</span>
+                <select data-v="course">${props.courses
+                  .map((c) => `<option value="${esc(c.id)}"${c.id === course.id ? ' selected' : ''}>${esc(c.name)}</option>`)
+                  .join('')}</select>
+              </label>`
+            : ''
+        }
         <p class="label" style="text-align:center;margin-top:28px;color:var(--text-3)">Space pause · → skip · ↑↓ difficulty · L latency${sim ? ' · W/S push the rider' : ''}</p>
       </div>
     </div>
@@ -259,6 +284,9 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     setText($(veil, '[data-v=go]'), VEIL[state].go);
     setText($(veil, '[data-v=kicker]'), state === 'lost' ? `${trainer.name} dropped out · ride paused` : workout.name);
     $(veil, '[data-v=end]').hidden = state === 'ready';
+    // The course is picked before starting; after that, you're on it.
+    const courseRow = veil.querySelector<HTMLElement>('[data-v=course-row]');
+    if (courseRow) courseRow.hidden = state !== 'ready';
     // Nothing to ride without the trainer; resume becomes available once it's back.
     $<HTMLButtonElement>(veil, '[data-v=go]').disabled = state === 'lost';
     if (!veil.isConnected) root.append(veil);
@@ -299,6 +327,10 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
   $(veil, '[data-v=go]').addEventListener('click', togglePause);
   $(veil, '[data-v=end]').addEventListener('click', end);
   $(veil, '[data-v=quit]').addEventListener('click', () => props.onQuit());
+  veil.querySelector<HTMLSelectElement>('[data-v=course]')?.addEventListener('change', (e) => {
+    const id = (e.target as HTMLSelectElement).value;
+    void props.loadCourse?.(id).then((c) => c && setCourse(c));
+  });
   pauseBtn.addEventListener('click', togglePause);
   $(page, '[data-role=skip]').addEventListener('click', () => session.skip());
   page.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
@@ -517,9 +549,11 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
       const g = Math.round(bike.grade * 100);
       setText(courseFields.grade, `${g > 0 ? '+' : g < 0 ? '−' : ''}${Math.abs(g)}%`);
       setText(courseFields.lap, `Lap ${bike.lap}`);
+      setText(courseFields.climb, climbCallout(bike.course, bike.distance, units));
       if (now - lastCourse > 200) {
         lastCourse = now;
         drawCourse(courseCanvas, bike.course, bike.distance);
+        if (routeCanvas) drawRoute(routeCanvas, bike.course, bike.distance);
       }
     }
     if (now - lastOverview > 500) {
@@ -537,4 +571,19 @@ export function renderRide(root: HTMLElement, props: RideProps): () => void {
     delete docEl.dataset.band;
     delete docEl.dataset.settling;
   };
+}
+
+/** " · 23rd Street in 0.4 mi" ahead of a named climb, " · 23rd Street ↑ 120 m to the top" on it. */
+function climbCallout(c: Course, distance: number, units: Units): string {
+  if (!c.climbs?.length) return '';
+  const at = ((distance % c.lapMeters) + c.lapMeters) % c.lapMeters;
+  for (const cl of c.climbs) {
+    if (at >= cl.start && at < cl.end) return ` · ${cl.name} ${Math.round(cl.avgGrade * 100)}% · ${climbText(cl.end - at, units)} to the top`;
+  }
+  let best: { name: string; ahead: number } | undefined;
+  for (const cl of c.climbs) {
+    const ahead = (cl.start - at + c.lapMeters) % c.lapMeters;
+    if (ahead <= 1000 && (!best || ahead < best.ahead)) best = { name: cl.name, ahead };
+  }
+  return best ? ` · ${best.name} in ${best.ahead >= 400 ? distanceText(best.ahead, units) : climbText(best.ahead, units)}` : '';
 }

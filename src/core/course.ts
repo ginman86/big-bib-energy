@@ -6,9 +6,25 @@ export interface Course {
   name: string;
   /** Where the loop is, for the ride screen ("Richmond, VA"). */
   place: string;
+  /** Out-and-back courses ride the same road both ways so the lap closes. */
+  kind?: 'loop' | 'out-and-back';
   lapMeters: number;
   /** One lap: [distance m, elevation m], ascending, starting at 0 and ending at lapMeters. */
   profile: [number, number][];
+  /** [lat, lon] for each profile point, for the route map. */
+  track?: [number, number][];
+  /** Named climbs, by distance into the lap. */
+  climbs?: Climb[];
+  /** Where the data came from (route, elevation model, smoothing). */
+  source?: string;
+}
+
+export interface Climb {
+  name: string;
+  start: number;
+  end: number;
+  avgGrade: number;
+  maxGrade: number;
 }
 
 /** Position within a lap, 0 ≤ d < lapMeters. */
@@ -56,7 +72,12 @@ export const DEFAULT_RIDER_KG = 75;
 export const bikeModel = (riderKg = DEFAULT_RIDER_KG): BikeModel => ({ massKg: riderKg + BIKE_KG, cda: 0.32, crr: 0.004 });
 
 const G = 9.81;
-const RHO = 1.225; // air density at sea level, 15 °C
+
+/**
+ * Air density (kg/m³) at an altitude, standard atmosphere: 1.225 at sea level, ~1.04 in Denver.
+ * Thinner air means less drag, which is why the same watts go faster at altitude.
+ */
+export const airDensity = (altitudeM: number) => 1.225 * Math.pow(1 - 2.25577e-5 * Math.max(-400, altitudeM), 4.25588);
 const DRIVETRAIN = 0.97;
 /** Rotating wheels behave like ~1 kg of extra mass under acceleration. */
 const WHEEL_INERTIA_KG = 1;
@@ -100,7 +121,7 @@ export class VirtualBike {
       const sin = g * cos;
       // Force at the wheel; below walking pace, treat it as a standing start rather than infinite force.
       const drive = (powerW * DRIVETRAIN) / Math.max(this.speed, 1.5);
-      const resist = massKg * G * (sin + crr * cos) + 0.5 * RHO * cda * this.speed * this.speed;
+      const resist = massKg * G * (sin + crr * cos) + 0.5 * airDensity(this.elevation) * cda * this.speed * this.speed;
       let v = this.speed + ((drive - resist) / m) * h;
       // Rolling resistance can stop you, not push you backwards.
       if (v < 0) v = 0;
@@ -114,8 +135,8 @@ export class VirtualBike {
 }
 
 /** Steady-state speed on a constant grade, for tests and sanity checks. */
-export function steadySpeed(powerW: number, grade: number, model: BikeModel): number {
-  const flat: Course = { id: 'x', name: 'x', place: '', lapMeters: 1e9, profile: [[0, 0], [1e9, grade * 1e9]] };
+export function steadySpeed(powerW: number, grade: number, model: BikeModel, altitudeM = 0): number {
+  const flat: Course = { id: 'x', name: 'x', place: '', lapMeters: 1e9, profile: [[0, altitudeM], [1e9, altitudeM + grade * 1e9]] };
   const bike = new VirtualBike(flat, model);
   bike.distance = 1000; // away from the (open) lap's ends
   for (let i = 0; i < 600; i++) bike.step(powerW, 1);

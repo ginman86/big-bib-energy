@@ -1335,17 +1335,22 @@ dialog::backdrop {
 
 /* Course strip: lap profile + speed. Same shape as the HR strip. */
 .ride.with-course {
-  grid-template-rows: auto 64px minmax(120px, 1fr) 96px 56px auto auto;
+  grid-template-rows: auto 64px minmax(120px, 1fr) 96px 72px auto auto;
 }
 .course-strip {
-  height: 56px;
+  height: 72px;
   min-height: 0;
   overflow: hidden;
   display: grid;
-  grid-template-rows: 56px;
-  grid-template-columns: 1fr 170px;
+  grid-template-rows: 72px;
+  grid-template-columns: 110px 1fr 170px;
   gap: 20px;
   border-bottom: 1px solid var(--line);
+}
+.route-map {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 .course-map {
   position: relative;
@@ -1673,7 +1678,11 @@ dialog::backdrop {
     --strip-h: 80px;
   }
   .ride.with-course {
-    grid-template-rows: auto 48px 180px 80px 56px auto auto;
+    grid-template-rows: auto 48px 180px 80px 72px auto auto;
+  }
+  .course-strip {
+    grid-template-columns: 72px 1fr 110px;
+    gap: 12px;
   }
   .hero,
   .hero.with-avatar {
@@ -1740,4 +1749,110 @@ dialog::backdrop {
 .course-line {
   margin-top: 6px;
   color: var(--text-3);
+}
+
+/* Ready screen: pick the course before rolling. */
+.veil-course {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+}
+.veil-course[hidden] {
+  display: none;
+}
+.veil-course select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+}
+
+/* ——— Course picker ——— */
+.chip-icon {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.course-intro {
+  margin: 4px 0 20px;
+}
+.course-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.course-card {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  background: var(--bg);
+}
+.course-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.course-pick {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0 16px 14px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+.course-pick.surprise {
+  padding-top: 18px;
+  min-height: 100%;
+  align-content: center;
+}
+.course-preview {
+  width: calc(100% + 32px);
+  height: 44px;
+  margin: 0 -16px 8px;
+  display: block;
+}
+.course-preview path {
+  fill: var(--line-strong);
+}
+.course-card.selected .course-preview path {
+  fill: var(--text-3);
+}
+.course-card-name {
+  font-family: var(--display);
+  font-size: 22px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+.course-tags {
+  display: flex;
+  gap: 10px;
+  color: var(--text-3);
+}
+.course-delete {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+}
+.course-import {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 28px 0 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.course-import p {
+  margin: 6px 0 0;
+  max-width: 60ch;
+}
+.course-note {
+  color: var(--text);
 }

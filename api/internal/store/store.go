@@ -38,20 +38,27 @@ type Ride struct {
 	UpdatedAt        time.Time `dynamodbav:"updatedAt"`
 }
 
-// CustomWorkout is a rider's own workout. Deleted ones stay as tombstones so a stale device can't
-// resurrect them; the newest UpdatedAt wins when devices sync.
-type CustomWorkout struct {
+// Kinds of rider-made items that sync between devices.
+const (
+	KindWorkout = "WORKOUT"
+	KindCourse  = "COURSE"
+)
+
+// CustomItem is a rider's own workout or course. Deleted ones stay as tombstones so a stale device
+// can't resurrect them; the newest UpdatedAt wins when devices sync.
+type CustomItem struct {
+	Kind      string    `dynamodbav:"-"` // part of the key
 	AthleteID int64     `dynamodbav:"athleteId"`
-	ID        string    `dynamodbav:"workoutId"`
-	Data      JSONText  `dynamodbav:"data"` // the app's Workout JSON
+	ID        string    `dynamodbav:"workoutId"` // attribute name predates courses
+	Data      JSONText  `dynamodbav:"data"`      // the app's Workout or Course JSON
 	Deleted   bool      `dynamodbav:"deleted,omitempty"`
 	UpdatedAt time.Time `dynamodbav:"updatedAt"`
 }
 
 type Store interface {
-	ListWorkouts(ctx context.Context, athleteID int64) ([]CustomWorkout, error)
-	GetWorkout(ctx context.Context, athleteID int64, id string) (*CustomWorkout, error)
-	PutWorkout(ctx context.Context, w *CustomWorkout) error
+	ListCustom(ctx context.Context, athleteID int64, kind string) ([]CustomItem, error)
+	GetCustom(ctx context.Context, athleteID int64, kind, id string) (*CustomItem, error)
+	PutCustom(ctx context.Context, item *CustomItem) error
 
 	PutRide(ctx context.Context, r *Ride) error
 	// PutRideIfAbsent writes the ride only if it doesn't exist; reports whether it was written.

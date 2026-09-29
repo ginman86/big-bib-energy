@@ -16,6 +16,8 @@ export interface Settings {
   weeklyGoal: number;
   /** Rider weight for virtual speed on the course (bike weight is added). */
   weightKg?: number;
+  /** Course for rides: a built-in or imported course ID, or 'random'. */
+  courseId?: string;
   /** Distance, speed and weight units; defaults from the browser's locale. */
   units?: Units;
   /** Last-used devices, for auto-connect and the "Reconnect …" button. */

@@ -13,7 +13,7 @@ type Memory struct {
 	athletes map[int64]Athlete
 	sessions map[string]memSession
 	rides    map[string]Ride
-	workouts map[string]CustomWorkout
+	custom   map[string]CustomItem
 }
 
 type memSession struct {
@@ -51,9 +51,9 @@ func (m *Memory) DeleteAthlete(_ context.Context, id int64) error {
 			delete(m.rides, k)
 		}
 	}
-	for k, w := range m.workouts {
+	for k, w := range m.custom {
 		if w.AthleteID == id {
-			delete(m.workouts, k)
+			delete(m.custom, k)
 		}
 	}
 	for h, s := range m.sessions {
@@ -139,14 +139,16 @@ func (m *Memory) ListRides(_ context.Context, athleteID int64, since time.Time) 
 	return out, nil
 }
 
-func workoutKey(athleteID int64, id string) string { return fmtInt(athleteID) + "|" + id }
+func customKey(athleteID int64, kind, id string) string {
+	return fmtInt(athleteID) + "|" + kind + "|" + id
+}
 
-func (m *Memory) ListWorkouts(_ context.Context, athleteID int64) ([]CustomWorkout, error) {
+func (m *Memory) ListCustom(_ context.Context, athleteID int64, kind string) ([]CustomItem, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []CustomWorkout
-	for _, w := range m.workouts {
-		if w.AthleteID == athleteID {
+	var out []CustomItem
+	for _, w := range m.custom {
+		if w.AthleteID == athleteID && w.Kind == kind {
 			out = append(out, w)
 		}
 	}
@@ -154,22 +156,22 @@ func (m *Memory) ListWorkouts(_ context.Context, athleteID int64) ([]CustomWorko
 	return out, nil
 }
 
-func (m *Memory) GetWorkout(_ context.Context, athleteID int64, id string) (*CustomWorkout, error) {
+func (m *Memory) GetCustom(_ context.Context, athleteID int64, kind, id string) (*CustomItem, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	w, ok := m.workouts[workoutKey(athleteID, id)]
+	w, ok := m.custom[customKey(athleteID, kind, id)]
 	if !ok {
 		return nil, nil
 	}
 	return &w, nil
 }
 
-func (m *Memory) PutWorkout(_ context.Context, w *CustomWorkout) error {
+func (m *Memory) PutCustom(_ context.Context, w *CustomItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.workouts == nil {
-		m.workouts = map[string]CustomWorkout{}
+	if m.custom == nil {
+		m.custom = map[string]CustomItem{}
 	}
-	m.workouts[workoutKey(w.AthleteID, w.ID)] = *w
+	m.custom[customKey(w.AthleteID, w.Kind, w.ID)] = *w
 	return nil
 }

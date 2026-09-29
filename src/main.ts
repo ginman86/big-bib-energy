@@ -20,7 +20,11 @@ import type { Trainer } from './devices/trainer';
 import { DeviceSlot, renderHome } from './ui/home';
 import { renderRide } from './ui/ride';
 import { appendHistory, loadHistory, loadSettings, saveSettings, Settings, unitsOf } from './ui/storage';
-import { DEFAULT_COURSE } from './courses';
+import { CATALOG, DEFAULT_COURSE_ID, loadBuiltinCourse, metaOf } from './courses';
+import { deleteCourse, localCourses, saveCourse, syncCourses } from './api/courses';
+import { importGpx } from './core/gpx';
+import type { Course } from './core/course';
+import { SURPRISE } from './ui/course-picker';
 import { renderSummary } from './ui/summary';
 
 type Kind = 'trainer' | 'hr';
@@ -43,6 +47,63 @@ let libraryNote: string | undefined;
 let lastRideSimulated = true;
 /** Local rides until signed in; then local merged with the account's synced rides. */
 let history: HistoryRide[] = loadHistory().map(toHistoryRide);
+
+// ——— Courses ———
+
+let customCourses: Course[] = localCourses();
+let courseNote: string | undefined;
+let coursesOpen = false;
+
+const courseMetas = () => [...CATALOG, ...customCourses.map(metaOf)];
+
+async function refreshCourses() {
+  if (!account) return;
+  try {
+    customCourses = await syncCourses();
+    refreshHome();
+  } catch (err) {
+    console.warn('Course sync failed', err);
+  }
+}
+
+/** The course to ride: the chosen one, a random one for "Surprise me", or the default. */
+async function resolveCourse(id = settings.courseId ?? DEFAULT_COURSE_ID): Promise<Course | undefined> {
+  if (id === SURPRISE) {
+    const all = courseMetas();
+    id = all[Math.floor(Math.random() * all.length)].id;
+  }
+  return customCourses.find((c) => c.id === id) ?? (await loadBuiltinCourse(id)) ?? loadBuiltinCourse(DEFAULT_COURSE_ID);
+}
+
+function pickCourse(id: string) {
+  coursesOpen = false;
+  settings = { ...settings, courseId: id };
+  saveSettings(settings);
+  pushSettings();
+  home();
+}
+
+async function importCourses(files: File[]) {
+  const notes: string[] = [];
+  let last: Course | undefined;
+  for (const f of files) {
+    try {
+      const { course, warnings } = importGpx(f.name, await f.text());
+      customCourses = [course, ...customCourses];
+      void saveCourse(course, !!account);
+      last = course;
+      notes.push(`Added ${course.name}${warnings.length ? `: ${warnings.join(' ')}` : ''}`);
+    } catch (err) {
+      notes.push(`${f.name}: ${err instanceof FormatError ? err.message : 'Could not read the file'}`);
+    }
+  }
+  courseNote = notes.join(' · ');
+  coursesOpen = true;
+  if (last) settings = { ...settings, courseId: last.id };
+  saveSettings(settings);
+  pushSettings();
+  home();
+}
 
 async function refreshWorkouts() {
   if (!account) return;
@@ -67,7 +128,11 @@ function build(initial?: Workout, existing = false, warnings?: string[]) {
   openBuilder({ initial, existing, warnings, ftp: settings.ftp, onSave: saveCustom });
 }
 
-async function importFiles(files: File[]) {
+async function importFiles(all: File[]) {
+  const isGpx = (f: File) => /\.gpx$/i.test(f.name);
+  if (all.some(isGpx)) void importCourses(all.filter(isGpx));
+  const files = all.filter((f) => !isGpx(f));
+  if (!files.length) return;
   const results = await Promise.all(
     files.map(async (f) => {
       try {
@@ -182,7 +247,7 @@ async function autoConnect() {
 // ——— Account ———
 
 /** Settings that follow you between devices. Paired devices stay per-browser. */
-const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr, weeklyGoal: s.weeklyGoal, weightKg: s.weightKg, units: s.units });
+const syncable = (s: Settings) => ({ ftp: s.ftp, mode: s.mode, avatar: s.avatar, hr: s.hr, weeklyGoal: s.weeklyGoal, weightKg: s.weightKg, units: s.units, courseId: s.courseId });
 
 const progressionOf = (rides: HistoryRide[]) =>
   progression(rides, { weeklyGoal: settings.weeklyGoal, utcOffsetMin: -new Date().getTimezoneOffset(), now: Date.now() });
@@ -216,6 +281,7 @@ async function boot() {
   if (account?.canUpload) void flushQueue();
   void refreshHistory();
   void refreshWorkouts();
+  void refreshCourses();
   void autoConnect();
 }
 
@@ -308,11 +374,34 @@ function home() {
       onSetup(open) {
         setupOpen = open;
       },
+      course: {
+        courses: courseMetas(),
+        courseId: settings.courseId ?? DEFAULT_COURSE_ID,
+        units: unitsOf(settings),
+        note: courseNote,
+        open: coursesOpen,
+        onOpen(open) {
+          coursesOpen = open;
+          if (!open) courseNote = undefined;
+        },
+        onPick: pickCourse,
+        onImport: (files) => void importCourses(files),
+        onDelete(id) {
+          const c = customCourses.find((x) => x.id === id);
+          if (!c || !confirm(`Delete "${c.name}"?`)) return;
+          customCourses = customCourses.filter((x) => x.id !== id);
+          if (settings.courseId === id) settings = { ...settings, courseId: DEFAULT_COURSE_ID };
+          saveSettings(settings);
+          void deleteCourse(id, !!account);
+          home();
+        },
+      },
     }),
   );
 }
 
-function ride(workout: Workout) {
+async function ride(workout: Workout) {
+  const course = await resolveCourse();
   const trainer: Trainer = realTrainer ?? new SimulatedTrainer(settings.ftp);
   lastRideSimulated = trainer.simulated;
   show('ride', (root) =>
@@ -324,7 +413,9 @@ function ride(workout: Workout) {
       heartRate,
       avatar: settings.avatar,
       lthr: settings.hr.lthr,
-      course: DEFAULT_COURSE,
+      course,
+      courses: courseMetas(),
+      loadCourse: resolveCourse,
       // Strava's profile weight when the rider hasn't set one here.
       weightKg: settings.weightKg ?? account?.athlete.weightKg,
       units: unitsOf(settings),

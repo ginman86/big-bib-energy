@@ -10,6 +10,7 @@ import { asset } from './asset';
 import { $, esc, html } from './dom';
 import { drawProfile } from './profile';
 import { patchWall, powerBlock, statsLine } from './progress';
+import { bindCoursePicker, courseChipLabel, coursePicker, CoursePickerProps } from './course-picker';
 import { bindSetup, deviceView, setupSheet } from './setup';
 import type { Settings } from './storage';
 
@@ -80,6 +81,8 @@ export interface HomeProps {
   /** Whether the setup sheet is open (kept by main so it survives re-renders). */
   setupOpen: boolean;
   onSetup(open: boolean): void;
+  /** Course picker (dialog opened from the status bar). */
+  course: CoursePickerProps;
 }
 
 function estimate(w: Workout, ftp: number) {
@@ -115,6 +118,7 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
       <section class="status-bar">
         ${chip('trainer', props.trainer, hasBt)}
         ${chip('hr', props.heartRate, hasBt)}
+        <button class="chip" data-role="open-courses" title="Course"><span class="chip-icon" aria-hidden="true">⛰</span>${esc(courseChipLabel(props.course))}</button>
         <span class="status-summary">FTP ${settings.ftp} · LTHR ${settings.hr.lthr ?? '—'} · ${settings.mode === 'erg' ? 'ERG' : 'Target'}</span>
         <button class="btn" data-role="open-setup">Setup</button>
       </section>
@@ -134,15 +138,16 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
         <span class="library-actions">
           <button class="btn" data-role="new-workout">New</button>
           <button class="btn" data-role="import">Import</button>
-          <input type="file" data-role="import-file" accept=".zwo,.mrc,.erg" multiple hidden />
+          <input type="file" data-role="import-file" accept=".zwo,.mrc,.erg,.gpx" multiple hidden />
         </span>
       </section>
       ${props.custom.length ? `<span class="label library-section">Mine</span><ol class="workouts" data-list="mine"></ol>` : ''}
       ${props.custom.length ? `<span class="label library-section">Built-in</span>` : ''}
       <ol class="workouts" data-list="builtin"></ol>
-      <div class="drop-hint" hidden><span>Drop .zwo, .mrc or .erg files to import</span></div>
+      <div class="drop-hint" hidden><span>Drop workouts (.zwo, .mrc, .erg) or courses (.gpx) to import</span></div>
 
       ${setupSheet(props, hasBt)}
+      ${coursePicker(props.course)}
       <dialog class="wall-dialog" data-role="wall" aria-label="Patches">
         <header class="sheet-head">
           <span class="wordmark">Patches</span>
@@ -259,9 +264,16 @@ export function renderHome(root: HTMLElement, props: HomeProps): () => void {
   page.querySelector('[data-role=use-strava-ftp]')?.addEventListener('click', () => props.onUseStravaFtp(props.ftpOffer!));
   page.querySelector('[data-role=dismiss-ftp]')?.addEventListener('click', () => props.onDismissFtp());
   const unbindSetup = bindSetup(page, props);
+  const unbindCourses = bindCoursePicker(page, props.course);
+  $(page, '[data-role=open-courses]').addEventListener('click', () => {
+    props.course.onOpen(true);
+    const d = $<HTMLDialogElement>(page, '[data-role=courses]');
+    if (!d.open) d.showModal();
+  });
 
   return () => {
     unbindSetup();
+    unbindCourses();
     window.removeEventListener('resize', draw);
   };
 }

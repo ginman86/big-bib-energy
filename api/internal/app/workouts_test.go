@@ -53,3 +53,24 @@ func TestWorkoutValidation(t *testing.T) {
 		t.Errorf("csrf %d", c)
 	}
 }
+
+func TestCoursesSyncSeparatelyFromWorkouts(t *testing.T) {
+	h, _, _ := rideHarness(t, "ok", "read")
+	body := `{"course":{"name":"Baker loop","profile":[[0,1600],[100,1601]]},"updatedAt":"2026-09-29T10:00:00Z"}`
+	if c := h.do("PUT", "/api/courses/gpx-baker-abc", body, ok).Code; c != 204 {
+		t.Fatalf("create %d", c)
+	}
+	if c := h.do("PUT", "/api/courses/custom-baker", body, ok).Code; c != 400 {
+		t.Errorf("course ids are gpx-…: %d", c)
+	}
+	if c := h.do("PUT", "/api/courses/gpx-baker-abc", strings.Replace(body, "10:00", "09:00", 1), ok).Code; c != 409 {
+		t.Errorf("stale %d", c)
+	}
+	list := h.do("GET", "/api/courses", "", nil).Body.String()
+	if !strings.Contains(list, `"courses":[{`) || !strings.Contains(list, "Baker loop") {
+		t.Errorf("list %s", list)
+	}
+	if w := h.do("GET", "/api/workouts", "", nil).Body.String(); strings.Contains(w, "Baker") {
+		t.Errorf("courses leaked into workouts: %s", w)
+	}
+}

@@ -63,9 +63,11 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("POST /api/rides", a.csrf(a.authed(a.postRide)))
 	mux.HandleFunc("GET /api/rides", a.authed(a.listRides))
 	mux.HandleFunc("POST /api/rides/import", a.csrf(a.authed(a.importRides)))
-	mux.HandleFunc("GET /api/workouts", a.authed(a.listWorkouts))
-	mux.HandleFunc("PUT /api/workouts/{id}", a.csrf(a.authed(a.putWorkout)))
-	mux.HandleFunc("DELETE /api/workouts/{id}", a.csrf(a.authed(a.deleteWorkout)))
+	for _, k := range []customKind{workoutsKind, coursesKind} {
+		mux.HandleFunc("GET /api/"+k.list, a.authed(a.listCustom(k)))
+		mux.HandleFunc("PUT /api/"+k.list+"/{id}", a.csrf(a.authed(a.putCustom(k))))
+		mux.HandleFunc("DELETE /api/"+k.list+"/{id}", a.csrf(a.authed(a.deleteCustom(k))))
+	}
 	return mux
 }
 
